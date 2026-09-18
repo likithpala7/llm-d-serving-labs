@@ -1,0 +1,11 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Phase 1 single-GPU vLLM baseline. Derived from llm-d's
+# guides/optimized-baseline/modelserver/gpu/vllm/base (INFRA_PROVIDER=base),
+# trimmed from the guide's 8x Qwen3-32B/TP=2 default down to fit one
+# g5.2xlarge. Vendored here (not edited in the llm-d clone) so the whole
+# stack lives in this repo — see CLAUDE.md's llm-d specifics section.
+resources:
+  - serviceaccount.yaml
+  - decode-deployment.yaml

@@ -1,0 +1,18 @@
+# Secrets / local config
+.env
+*.env
+kubeconfig
+*.kubeconfig
+.aws/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Future /app build output
+node_modules/
+dist/
+__pycache__/
+*.pyc

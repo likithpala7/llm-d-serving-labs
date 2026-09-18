@@ -1,0 +1,30 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  yaml-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+      - run: pip install yamllint
+      - run: yamllint .
+
+  kustomize-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-kubectl@v4
+      - name: Dry-run build all kustomize overlays
+        run: |
+          set -e
+          for dir in $(find . -name kustomization.yaml -exec dirname {} \;); do
+            echo "Building $dir"
+            kubectl kustomize "$dir" > /dev/null
+          done

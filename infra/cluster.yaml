@@ -1,0 +1,34 @@
+apiVersion: eksctl.io/v1alpha5
+kind: ClusterConfig
+
+metadata:
+  name: llm-d-harness
+  region: us-east-1          # adjust to your preferred region; confirm g5 capacity there
+  version: "1.31"
+
+vpc:
+  nat:
+    gateway: Single           # 1 NAT gateway instead of eksctl's default of one per AZ
+
+managedNodeGroups:
+  - name: system
+    instanceType: m5.large     # 2 vCPU / 8GB — enough for router/EPP/monitoring pods, much cheaper than xlarge
+    desiredCapacity: 1
+    minSize: 1
+    maxSize: 2
+    labels:
+      role: system
+
+  - name: gpu-baseline
+    instanceType: g5.2xlarge   # 1x A10G, 24GB VRAM
+    amiFamily: AmazonLinux2023  # eksctl resolves the GPU-enabled AL2023 variant automatically
+    desiredCapacity: 0         # 0 until GPU quota clears — group exists, no instances launched yet
+    minSize: 0
+    maxSize: 1
+    volumeSize: 100             # model weights + container images add up fast
+    labels:
+      role: gpu
+    taints:
+      - key: nvidia.com/gpu
+        value: "true"
+        effect: NoSchedule

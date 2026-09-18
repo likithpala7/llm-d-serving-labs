@@ -1,0 +1,111 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: optimized-baseline-nvidia-gpu-vllm-decode
+  labels:
+    llm-d.ai/accelerator-variant: gpu
+    llm-d.ai/accelerator-vendor: nvidia
+    llm-d.ai/guide: optimized-baseline
+    llm-d.ai/model: Qwen3-8B
+    llm-d.ai/role: decode
+spec:
+  # 1 instead of the guide's default of 8 — this cluster has one g5.2xlarge
+  replicas: 1
+  selector:
+    matchLabels:
+      llm-d.ai/accelerator-variant: gpu
+      llm-d.ai/accelerator-vendor: nvidia
+      llm-d.ai/guide: optimized-baseline
+      llm-d.ai/model: Qwen3-8B
+      llm-d.ai/role: decode
+  template:
+    metadata:
+      labels:
+        llm-d.ai/accelerator-variant: gpu
+        llm-d.ai/accelerator-vendor: nvidia
+        llm-d.ai/guide: optimized-baseline
+        llm-d.ai/model: Qwen3-8B
+        llm-d.ai/role: decode
+    spec:
+      serviceAccountName: optimized-baseline-nvidia-gpu-vllm-sa
+      # cluster.yaml taints gpu-baseline with nvidia.com/gpu=true:NoSchedule
+      tolerations:
+        - key: nvidia.com/gpu
+          operator: Equal
+          value: "true"
+          effect: NoSchedule
+      containers:
+        - name: modelserver
+          image: vllm/vllm-openai:v0.26.0
+          command: ["vllm", "serve"]
+          args:
+            # Qwen3-8B instead of the guide's default Qwen3-32B — fits a
+            # single A10G (24GB VRAM); no --tensor-parallel-size needed
+            # since there's only 1 GPU
+            - "Qwen/Qwen3-8B"
+            - "--disable-access-log-for-endpoints=/health,/metrics,/v1/models"
+          env:
+            - name: HF_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: llm-d-hf-token
+                  key: HF_TOKEN
+            - name: USER
+              value: llm-d
+          ports:
+            - name: modelserver
+              containerPort: 8000
+              protocol: TCP
+          resources:
+            # sized for g5.2xlarge (8 vCPU / 32GiB / 1x A10G), leaving
+            # headroom for system daemonsets (device plugin, cni, etc.)
+            limits:
+              cpu: '7'
+              memory: 28Gi
+              nvidia.com/gpu: 1
+            requests:
+              cpu: '6'
+              memory: 24Gi
+              nvidia.com/gpu: 1
+          volumeMounts:
+            - mountPath: /dev/shm
+              name: shm
+            - mountPath: /.cache
+              name: torch-compile-cache
+            - mountPath: /.triton
+              name: triton-cache
+            - mountPath: /.config
+              name: vllm-config
+          startupProbe:
+            httpGet:
+              path: /v1/models
+              port: modelserver
+            initialDelaySeconds: 15
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 120
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: modelserver
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /v1/models
+              port: modelserver
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 3
+      volumes:
+        - name: shm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 4Gi
+        - name: torch-compile-cache
+          emptyDir: {}
+        - name: triton-cache
+          emptyDir: {}
+        - name: vllm-config
+          emptyDir: {}
