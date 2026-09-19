@@ -35,8 +35,29 @@ baseline works.
   `g5.2xlarge`, request ID `84555add1b8c40b7a8ffa5db249ab6c9fmKSvUPq`) —
   small requests from new accounts are much likelier to auto-approve, and
   this builds usage history that makes the later 8→16 ask (for phase 2)
-  easier. Check status:
+  easier. **This 8-vCPU request was also denied (2026-09-18)** — appealed
+  with a detailed use-case writeup via the Support Center console (case
+  `178969720900083`), response pending. Check status:
   `aws service-quotas list-requested-service-quota-change-history-by-quota --service-code ec2 --quota-code L-DB2E81BA --region us-east-1`
+- **Bigger finding (2026-09-18): the account-level restriction isn't
+  G-family/GPU-specific.** Created the cluster with the GPU node group at
+  `desiredCapacity: 0` (as designed, to avoid needing GPU quota) — the
+  plain `m5.large` **system** node group still failed to launch any
+  instance, repeatedly, with
+  `InvalidParameterCombination - The specified instance type is not
+  eligible for Free Tier`. `eksctl create cluster` waited 25 minutes then
+  errored out (`exceeded max wait time for StackCreateComplete waiter`);
+  the EKS control plane and the (empty) `gpu-baseline` node group came up
+  fine, but `system` sat at `CREATING` with `Instances: []` in its ASG the
+  whole time — confirmed via
+  `aws autoscaling describe-scaling-activities --auto-scaling-group-name <system nodegroup ASG>`.
+  **This account currently cannot launch any non-free-tier EC2 instance
+  at all**, not just GPU ones — almost certainly the same underlying
+  account-verification/trust gate behind both quota denials above, not a
+  separate issue. The cluster was deleted afterward (nothing could run on
+  it, no reason to keep paying the ~$0.10/hr control plane cost) —
+  recreate with `eksctl create cluster -f infra/cluster.yaml` once this
+  restriction lifts (the pending appeal may resolve both at once).
 - `cluster.yaml` (eksctl config) written, cluster **not yet created**.
   GPU node group is present but `desiredCapacity: 0` so cluster creation
   doesn't require GPU quota — bring up everything else now, scale GPU
