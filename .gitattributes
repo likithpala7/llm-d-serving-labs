@@ -1,0 +1,3 @@
+# Force LF regardless of local autocrlf settings — scripts here are run
+# under WSL bash, which breaks on CRLF (hit this with llm-d's env.sh).
+* text=auto eol=lf
