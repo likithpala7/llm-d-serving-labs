@@ -66,6 +66,27 @@ baseline works.
   (likely a WSL/session hiccup) — always verify with
   `eksctl get nodegroup --cluster llm-d-harness --region us-east-1` (not
   just `eksctl get cluster`) before assuming creation actually finished.
+- **Stuck deletion (2026-09-28): cluster currently exists in a half-deleted
+  state, teardown needs to be finished before recreating.** After hitting
+  the free-tier restriction again, deleted the cluster — `gpu-baseline`'s
+  stack deleted fine, but the `system` nodegroup has been stuck in
+  `DELETING` (both via `aws eks describe-nodegroup` and its CloudFormation
+  stack) for 40+ minutes with zero progress (`modifiedAt` frozen, no
+  `health.issues`, no `DELETE_FAILED` event). `eksctl delete cluster`'s own
+  waiter gave up after ~25 min (`exceeded max wait time for
+  StackDeleteComplete waiter`), same pattern as the create-side timeout.
+  Tried: scaling the underlying ASG (`eks-system-*`) to 0 directly (its
+  `DesiredCapacity` was stuck at 1, presumably still retrying failed
+  launches) — didn't help. Tried: reissuing `aws eks delete-nodegroup` —
+  returned the same stuck state, no new error. No real EC2 instances ever
+  ran in this nodegroup (all launches failed), so this isn't accumulating
+  compute cost, just blocking full cleanup/recreation. **Before resuming
+  work here, check current state**: `aws eks describe-nodegroup
+  --cluster-name llm-d-harness --nodegroup-name system --region us-east-1`
+  — if still stuck, this needs its own AWS Support case (a stuck
+  node-group deletion), separate from the two account-restriction cases
+  above; if it cleared on its own, finish with `eksctl delete cluster -f
+  infra/cluster.yaml` before recreating.
 - `cluster.yaml` (eksctl config) written, cluster **not yet created**.
   GPU node group is present but `desiredCapacity: 0` so cluster creation
   doesn't require GPU quota — bring up everything else now, scale GPU
