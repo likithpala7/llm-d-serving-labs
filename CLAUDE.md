@@ -37,27 +37,35 @@ baseline works.
   this builds usage history that makes the later 8→16 ask (for phase 2)
   easier. **This 8-vCPU request was also denied (2026-09-18)** — appealed
   with a detailed use-case writeup via the Support Center console (case
-  `178969720900083`), response pending. Check status:
-  `aws service-quotas list-requested-service-quota-change-history-by-quota --service-code ec2 --quota-code L-DB2E81BA --region us-east-1`
-- **Bigger finding (2026-09-18): the account-level restriction isn't
-  G-family/GPU-specific.** Created the cluster with the GPU node group at
-  `desiredCapacity: 0` (as designed, to avoid needing GPU quota) — the
-  plain `m5.large` **system** node group still failed to launch any
-  instance, repeatedly, with
-  `InvalidParameterCombination - The specified instance type is not
-  eligible for Free Tier`. `eksctl create cluster` waited 25 minutes then
-  errored out (`exceeded max wait time for StackCreateComplete waiter`);
-  the EKS control plane and the (empty) `gpu-baseline` node group came up
-  fine, but `system` sat at `CREATING` with `Instances: []` in its ASG the
-  whole time — confirmed via
+  `178969720900083`). **This appeal was approved (~2026-09-27): the g5/G-VT
+  quota (`L-DB2E81BA`) is now 8 vCPUs**, confirmed via
+  `aws service-quotas get-service-quota --service-code ec2 --quota-code L-DB2E81BA --region us-east-1`.
+- **Bigger finding (2026-09-18, confirmed still unresolved 2026-09-28
+  after the quota fix above): the account-level restriction isn't
+  G-family/GPU-specific, and getting the G/VT quota approved did NOT fix
+  it.** Created the cluster with the GPU node group at `desiredCapacity: 0`
+  (as designed, to avoid needing GPU quota) — the plain `m5.large`
+  **system** node group still failed to launch any instance, repeatedly,
+  with `InvalidParameterCombination - The specified instance type is not
+  eligible for Free Tier`. Confirmed via
   `aws autoscaling describe-scaling-activities --auto-scaling-group-name <system nodegroup ASG>`.
   **This account currently cannot launch any non-free-tier EC2 instance
-  at all**, not just GPU ones — almost certainly the same underlying
-  account-verification/trust gate behind both quota denials above, not a
-  separate issue. The cluster was deleted afterward (nothing could run on
-  it, no reason to keep paying the ~$0.10/hr control plane cost) —
+  at all**, not just GPU ones. This is a *separate* restriction from the
+  G/VT Service Quotas line item above — that quota is now fixed, but this
+  free-tier-only gate is a different account-verification/trust hold that
+  the quota appeal never actually addressed (it went through the Service
+  Quotas request flow; this needs its own support case, worded around
+  "account restricted to Free Tier-eligible EC2 instances only," not a
+  quota increase). **Next step: open a new/distinct case about this
+  specifically** — don't assume the existing quota case covers it.
+  The cluster has been deleted both times this was hit (nothing could run
+  on it, no reason to keep paying the ~$0.10/hr control plane cost) —
   recreate with `eksctl create cluster -f infra/cluster.yaml` once this
-  restriction lifts (the pending appeal may resolve both at once).
+  restriction lifts. Note: last time, the background `eksctl create
+  cluster`/`create nodegroup` process got silently interrupted mid-run
+  (likely a WSL/session hiccup) — always verify with
+  `eksctl get nodegroup --cluster llm-d-harness --region us-east-1` (not
+  just `eksctl get cluster`) before assuming creation actually finished.
 - `cluster.yaml` (eksctl config) written, cluster **not yet created**.
   GPU node group is present but `desiredCapacity: 0` so cluster creation
   doesn't require GPU quota — bring up everything else now, scale GPU
