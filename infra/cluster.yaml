@@ -6,6 +6,12 @@ metadata:
   region: us-east-1          # adjust to your preferred region; confirm g5 capacity there
   version: "1.31"
 
+# Pinned instead of letting eksctl pick 2 random AZs — hit
+# InsufficientInstanceCapacity for g5.2xlarge in us-east-1f/us-east-1b on
+# 2026-09-30. These three had confirmed capacity per the AWS error message
+# at that time; re-verify if g5.2xlarge launches ever fail here again.
+availabilityZones: ["us-east-1a", "us-east-1c", "us-east-1d"]
+
 vpc:
   nat:
     gateway: Single           # 1 NAT gateway instead of eksctl's default of one per AZ
