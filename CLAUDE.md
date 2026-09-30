@@ -12,8 +12,9 @@ learning project and partly a portfolio piece.
 
 ## Phased plan
 
-1. **EKS + llm-d/vLLM baseline, single GPU** ← currently here
-2. PD disaggregation across 2 GPUs (benchmark TTFT/throughput vs. baseline)
+1. **EKS + llm-d/vLLM baseline, single GPU** — working end-to-end as of
+   2026-09-30 (see Current Status below); teardown/recreate is routine now
+2. PD disaggregation across 2 GPUs (benchmark TTFT/throughput vs. baseline) ← currently here
 3. Sandbox + context-manager service (tool execution, context window mgmt)
 4. Basic UI (chat + live tool-call/sandbox trace)
 
@@ -128,10 +129,23 @@ baseline works.
   `--vpc-zone-identifier` to one specific AZ is a fast way to test/force
   that AZ specifically without touching the rest of the cluster.
   `cluster.yaml`'s `availabilityZones` now reflects the final 5-AZ list.
-- **Current state (2026-09-30): cluster is live.** `llm-d-harness` is
-  `ACTIVE` with both node groups `ACTIVE` — `system` (1x `m5.large`) and
-  `gpu-baseline` (1x `g5.2xlarge`, confirmed `Ready` with
-  `nvidia.com/gpu: 1` allocatable and the taint/label correctly applied).
+- **PHASE 1 WORKING END-TO-END (2026-09-30).** `llm-d-harness` cluster
+  `ACTIVE`, both node groups `ACTIVE` (`system` 1x `m5.large`,
+  `gpu-baseline` 1x `g5.2xlarge` with `nvidia.com/gpu: 1` allocatable).
+  Ran `infra/deploy-baseline.sh` successfully — router (`epp` pod `2/2
+  Running`) and the vLLM decode pod (`1/1 Running`, `Qwen/Qwen3-8B`)
+  both healthy. Verified with a real inference request through the
+  router (`kubectl run curl-test ... -- curl http://<epp-svc-clusterip>/v1/completions`)
+  — got back a genuine completion. Two more bugs found and fixed getting
+  here (both already vendored, not upstream issues):
+  1. Model's default context (40960 tokens) needs more KV cache than fits
+     on the A10G after model weights — capped with `--max-model-len=8192`
+     in `infra/modelserver/decode-deployment.yaml`.
+  2. The default `RollingUpdate` deployment strategy deadlocks for any
+     single-replica GPU workload on a single-GPU node (new pod can't
+     schedule while old pod holds the only GPU, old pod won't die until
+     new one's ready) — switched to `strategy: {type: Recreate}` in the
+     same file. Worth remembering for phase 2's prefill/decode pods too.
   Remember the cost guardrails above are real now (paid plan) — don't
   forget `eksctl delete cluster -f infra/cluster.yaml` at end of session.
   To recreate from scratch later: `eksctl create cluster -f
@@ -139,7 +153,9 @@ baseline works.
   no GPU quota/capacity needed for that step), then
   `eksctl scale nodegroup --cluster=llm-d-harness --name=gpu-baseline --nodes=1 --nodes-min=0 --nodes-max=1`
   to bring the GPU node up (may need a few retries/minutes if capacity is
-  tight — see saga above).
+  tight — see saga above), then `bash infra/deploy-baseline.sh` (needs
+  `HF_TOKEN` set — run this one yourself, not through an AI assistant,
+  since it's a secret).
 
 ## Local environment
 
