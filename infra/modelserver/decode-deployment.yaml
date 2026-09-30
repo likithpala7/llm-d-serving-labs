@@ -44,6 +44,11 @@ spec:
             # since there's only 1 GPU
             - "Qwen/Qwen3-8B"
             - "--disable-access-log-for-endpoints=/health,/metrics,/v1/models"
+            # Qwen3-8B's default max context (40960) needs 5.62GiB of KV
+            # cache, but the A10G only has ~3.98GiB free after loading the
+            # 15.27GiB bf16 model weights (vLLM estimated ~28976 tokens as
+            # the real ceiling) — capped well under that with headroom
+            - "--max-model-len=8192"
           env:
             - name: HF_TOKEN
               valueFrom:
