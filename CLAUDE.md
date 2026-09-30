@@ -104,11 +104,42 @@ baseline works.
   infra/cluster.yaml` whenever the free-tier account restriction above
   actually lifts (not yet confirmed — check before spending time on a
   fresh create attempt).
-- `cluster.yaml` (eksctl config) written, cluster **not yet created**.
-  GPU node group is present but `desiredCapacity: 0` so cluster creation
-  doesn't require GPU quota — bring up everything else now, scale GPU
-  nodes on once quota clears:
+- **g5.2xlarge capacity saga (2026-09-30), resolved — cluster is up with a
+  real GPU node.** After both account-level blockers above were actually
+  cleared, `eksctl create cluster` still failed to launch the `gpu-baseline`
+  GPU node with `InsufficientInstanceCapacity` — AWS genuinely out of
+  physical `g5.2xlarge` inventory, unrelated to our account. This rotated
+  unpredictably across AZs (`us-east-1f`/`b` failed, then after pinning to
+  `a`/`c`/`d` those failed too, then after widening to all 6 AZs `b`/`c`/
+  `d`/`f` all failed repeatedly while `a` was suspiciously never attempted).
+  Also hit along the way: **`us-east-1e` isn't valid for the EKS control
+  plane at all** (`"EKS does not support creating control plane instances
+  in us-east-1e"` — hard error, not a capacity issue; dropped it from
+  `availabilityZones`, kept the other 5: a/b/c/d/f). To test whether `a`
+  really had capacity, temporarily restricted the ASG to just that one
+  subnet with `aws autoscaling update-auto-scaling-group
+  --vpc-zone-identifier <subnet-in-us-east-1a-only>` — **this worked**, the
+  GPU node came up within ~30s. Restored the ASG back to all 5 subnets
+  afterward for future resilience. **Takeaway**: don't pin `availabilityZones`
+  to a fixed subset for a scarce instance type like g5 — use every AZ the
+  EKS control plane actually supports (all of us-east-1 except `us-east-1e`)
+  so the ASG has the most chances of landing wherever capacity currently is;
+  if it still won't land anywhere, temporarily narrowing the ASG's
+  `--vpc-zone-identifier` to one specific AZ is a fast way to test/force
+  that AZ specifically without touching the rest of the cluster.
+  `cluster.yaml`'s `availabilityZones` now reflects the final 5-AZ list.
+- **Current state (2026-09-30): cluster is live.** `llm-d-harness` is
+  `ACTIVE` with both node groups `ACTIVE` — `system` (1x `m5.large`) and
+  `gpu-baseline` (1x `g5.2xlarge`, confirmed `Ready` with
+  `nvidia.com/gpu: 1` allocatable and the taint/label correctly applied).
+  Remember the cost guardrails above are real now (paid plan) — don't
+  forget `eksctl delete cluster -f infra/cluster.yaml` at end of session.
+  To recreate from scratch later: `eksctl create cluster -f
+  infra/cluster.yaml` (creates `gpu-baseline` at `desiredCapacity: 0`,
+  no GPU quota/capacity needed for that step), then
   `eksctl scale nodegroup --cluster=llm-d-harness --name=gpu-baseline --nodes=1 --nodes-min=0 --nodes-max=1`
+  to bring the GPU node up (may need a few retries/minutes if capacity is
+  tight — see saga above).
 
 ## Local environment
 
