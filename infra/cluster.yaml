@@ -6,13 +6,15 @@ metadata:
   region: us-east-1          # adjust to your preferred region; confirm g5 capacity there
   version: "1.31"
 
-# All 6 AZs, not a fixed subset — g5.2xlarge capacity in us-east-1 shifts
+# All AZs EKS actually supports for the control plane in us-east-1 — not
+# us-east-1e, which EKS rejects outright ("EKS does not support creating
+# control plane instances in us-east-1e", confirmed 2026-09-30). Using all
+# 5 valid ones (not a fixed subset) because g5.2xlarge capacity shifts
 # unpredictably between AZs (observed InsufficientInstanceCapacity rotate
-# across f/b, then a/c/d, all within minutes of each other on 2026-09-30).
-# Pinning to any specific subset just gambles on which one is short right
-# now; maximizing AZ coverage gives the node group's ASG the most chances
-# to land wherever capacity actually is at launch time.
-availabilityZones: ["us-east-1a", "us-east-1b", "us-east-1c", "us-east-1d", "us-east-1e", "us-east-1f"]
+# across f/b, then a/c/d, within minutes of each other on 2026-09-30) —
+# maximizing AZ coverage gives the node group's ASG the most chances to
+# land wherever capacity actually is at launch time.
+availabilityZones: ["us-east-1a", "us-east-1b", "us-east-1c", "us-east-1d", "us-east-1f"]
 
 vpc:
   nat:
