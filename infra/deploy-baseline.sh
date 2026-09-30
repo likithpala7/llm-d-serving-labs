@@ -38,6 +38,7 @@ helm install "${GUIDE_NAME}" \
   "${ROUTER_STANDALONE_CHART}" \
   -f "${LLM_D_REPO_ROOT}/guides/recipes/router/base.values.yaml" \
   -f "${LLM_D_REPO_ROOT}/guides/${GUIDE_NAME}/router/${GUIDE_NAME}.values.yaml" \
+  -f "${SCRIPT_DIR}/router-resources-override.values.yaml" \
   -n "${NAMESPACE}" --version "${ROUTER_CHART_VERSION}"
 
 echo "==> Applying vLLM model server (infra/modelserver)"

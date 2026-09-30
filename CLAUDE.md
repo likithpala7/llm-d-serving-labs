@@ -213,6 +213,17 @@ control.
   clone itself should stay unmodified/pristine — it's just the upstream
   reference for the router Helm chart and everything else the guide still
   drives directly.
+- **Same oversizing problem on the router side (2026-09-30)**: the guide's
+  `recipes/router/base.values.yaml` sets `router.proxy.resources` (envoy
+  sidecar) AND `router.epp.resources` (epp container) to 4 CPU/8Gi request,
+  16Gi limit **each** — two separate keys, both sized for a production
+  node pool, not our single `m5.large` `system` node (2 vCPU/8GiB total).
+  The `epp` pod sat `Pending` forever (`Insufficient cpu, Insufficient
+  memory`) until both were overridden down. Fix vendored in
+  `infra/router-resources-override.values.yaml` (250m CPU/512Mi request,
+  1Gi limit each) and layered on as the last `-f` in `deploy-baseline.sh`'s
+  `helm install`/`upgrade` — same "vendor the override, don't edit the
+  llm-d clone" pattern as the vLLM manifests above.
 - **Follow-up once benchmarking (phase 2+)**: the router's
   `peakPrefillThroughput: 15928` default (in
   `guides/optimized-baseline/router/optimized-baseline.values.yaml`) is

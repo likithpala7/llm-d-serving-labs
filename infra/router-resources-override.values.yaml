@@ -1,0 +1,22 @@
+# Overrides the guide's default router.proxy.resources and
+# router.epp.resources (each 4 CPU / 8Gi request, 16Gi limit — sized for
+# a production multi-GPU deployment, set in guides/recipes/router/base.values.yaml)
+# down to something that actually fits on our single m5.large system node
+# (2 vCPU / 8GiB total, shared with kube-system daemonsets). These are two
+# separate containers in the same EPP pod (envoy-proxy sidecar + epp
+# itself) with two separate resources keys — both need overriding.
+router:
+  proxy:
+    resources:
+      requests:
+        cpu: 250m
+        memory: 512Mi
+      limits:
+        memory: 1Gi
+  epp:
+    resources:
+      requests:
+        cpu: 250m
+        memory: 512Mi
+      limits:
+        memory: 1Gi
