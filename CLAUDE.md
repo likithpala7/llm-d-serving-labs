@@ -56,8 +56,19 @@ baseline works.
   the quota appeal never actually addressed (it went through the Service
   Quotas request flow; this needs its own support case, worded around
   "account restricted to Free Tier-eligible EC2 instances only," not a
-  quota increase). **Next step: open a new/distinct case about this
-  specifically** — don't assume the existing quota case covers it.
+  quota increase).
+  **RESOLVED 2026-09-30**: not a fraud/trust review at all — it's AWS's
+  account-plan system. A support case on this specific issue confirmed the
+  account was on `accountPlanType: FREE`, which hard-restricts EC2 to
+  Free Tier-eligible instance types by design until upgraded. Fixed with
+  `aws freetier upgrade-account-plan --account-plan-type PAID` (confirmed
+  via `aws freetier get-account-plan-state` before/after). **This is
+  permanent/irreversible** — no downgrade back to Free — but the $99.08
+  remaining promotional credit carried over unaffected. Post-upgrade,
+  normal pay-as-you-go billing applies to anything beyond the credit/Always
+  Free limits — i.e. the cost guardrails below are no longer a "the
+  cluster won't even launch" backstop, they're the *only* backstop now,
+  so the teardown discipline actually matters for real starting now.
   The cluster has been deleted both times this was hit (nothing could run
   on it, no reason to keep paying the ~$0.10/hr control plane cost) —
   recreate with `eksctl create cluster -f infra/cluster.yaml` once this
