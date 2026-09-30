@@ -6,11 +6,13 @@ metadata:
   region: us-east-1          # adjust to your preferred region; confirm g5 capacity there
   version: "1.31"
 
-# Pinned instead of letting eksctl pick 2 random AZs — hit
-# InsufficientInstanceCapacity for g5.2xlarge in us-east-1f/us-east-1b on
-# 2026-09-30. These three had confirmed capacity per the AWS error message
-# at that time; re-verify if g5.2xlarge launches ever fail here again.
-availabilityZones: ["us-east-1a", "us-east-1c", "us-east-1d"]
+# All 6 AZs, not a fixed subset — g5.2xlarge capacity in us-east-1 shifts
+# unpredictably between AZs (observed InsufficientInstanceCapacity rotate
+# across f/b, then a/c/d, all within minutes of each other on 2026-09-30).
+# Pinning to any specific subset just gambles on which one is short right
+# now; maximizing AZ coverage gives the node group's ASG the most chances
+# to land wherever capacity actually is at launch time.
+availabilityZones: ["us-east-1a", "us-east-1b", "us-east-1c", "us-east-1d", "us-east-1e", "us-east-1f"]
 
 vpc:
   nat:
