@@ -276,10 +276,42 @@ architecture is still moving; a repo split is a cheap mechanical operation
 - **CI: set up now.** YAML lint, `helm template` / `kustomize build` as a
   dry-run, later the app test suite and `docker build` (no push). No AWS
   credentials needed in CI yet, so no secrets-management surface.
-- **CD: deliberately not set up yet.** Two reasons: (1) infra shape is
-  still changing session to session, (2) auto-apply on push conflicts with
-  the cost discipline above — don't want a workflow reflexively bringing up
-  billable GPU infra on a push. When infra automation is eventually added,
-  keep it on `workflow_dispatch` (manual trigger), not auto-on-merge.
-  App-layer CD (pushing a new image to an already-running Deployment) is a
-  safer later candidate since it doesn't spin up new billable infra.
+- **CD: app-layer config redeploy set up (2026-09-30), scoped deliberately
+  narrow.** `.github/workflows/deploy.yml`, `workflow_dispatch` only — no
+  auto-trigger on push, both because infra shape is still changing and
+  because auto-apply would conflict with the cost discipline above (the
+  cluster usually won't even exist between sessions). Scope: config/manifest
+  changes to an **already-running** cluster only — model name,
+  `--max-model-len`, resource overrides, router Helm values. It does
+  `kubectl apply -k infra/modelserver` + `helm upgrade` for the router, then
+  waits for rollout. It deliberately does **not** touch GAIE CRDs, namespace
+  creation, or the `HF_TOKEN` secret (those are one-time `deploy-baseline.sh`
+  concerns) — and *can't*, even if asked to: the IAM role's EKS access policy
+  is namespace-scoped (see below), not cluster-scoped. A pre-flight step
+  fails fast with a clear message if the GPU node isn't up, rather than
+  timing out confusingly. Still out of scope: building/pushing custom
+  container images — this only re-applies existing config, nothing builds
+  new image artifacts yet.
+  - **Auth**: GitHub OIDC federation (not static AWS keys) — a GitHub
+    Actions-specific OIDC provider was created in IAM
+    (`token.actions.githubusercontent.com`, thumbprint verified live against
+    Let's Encrypt's current ISRG Root X1, not a hardcoded value — GitHub
+    switched from DigiCert to Let's Encrypt at some point, so old thumbprint
+    guides floating around are stale). Role: `github-actions-agent-harness-deploy`,
+    trust policy restricted to `repo:likithpala7/agent-harness:ref:refs/heads/main`
+    (not arbitrary branches/forks) — see `infra/github-actions-trust-policy.json`.
+    IAM permissions: just `eks:DescribeCluster` on this one cluster (see
+    `infra/github-actions-permissions-policy.json`) — actual Kubernetes
+    access comes from an EKS Access Entry mapping that role to
+    `AmazonEKSEditPolicy`, scoped via `accessScope` to just the
+    `llm-d-optimized-baseline` namespace (not cluster-admin, can't touch
+    other namespaces or cluster-scoped resources like CRDs/RBAC). No
+    `HF_TOKEN` or other secrets live in GitHub Actions at all — config-only
+    redeploys never touch it.
+  - Recreating this setup from scratch (e.g. after a full account/cluster
+    rebuild) needs, in order: `aws iam create-open-id-connect-provider` (OIDC
+    provider), `aws iam create-role` + `put-role-policy` (the role + its two
+    policy files above), `aws eks create-access-entry` +
+    `associate-access-policy` (the actual RBAC grant — this last command
+    needs explicit user confirmation/manual run, it's the step that grants
+    real cluster access and gets flagged by permission classifiers).
