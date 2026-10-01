@@ -298,8 +298,20 @@ architecture is still moving; a repo split is a cheap mechanical operation
     Let's Encrypt's current ISRG Root X1, not a hardcoded value — GitHub
     switched from DigiCert to Let's Encrypt at some point, so old thumbprint
     guides floating around are stale). Role: `github-actions-agent-harness-deploy`,
-    trust policy restricted to `repo:likithpala7/agent-harness:ref:refs/heads/main`
-    (not arbitrary branches/forks) — see `infra/github-actions-trust-policy.json`.
+    trust policy restricted to one specific repo/branch — but **GitHub's
+    actual OIDC `sub` claim format isn't the classic documented
+    `repo:OWNER/REPO:ref:refs/heads/BRANCH`** — it now embeds immutable
+    numeric IDs: `repo:likithpala7@58575772/agent-harness@1375277757:ref:refs/heads/main`
+    (user ID after `@` on the owner, repo ID after `@` on the repo name —
+    presumably to stop impersonation via repo delete+recreate or rename).
+    First attempt used the old format and failed every retry with
+    `Not authorized to perform sts:AssumeRoleWithWebIdentity`; confirmed the
+    real value by temporarily adding a workflow step that fetches and
+    base64-decodes the actual OIDC JWT payload rather than guessing further
+    — see `infra/github-actions-trust-policy.json` for the corrected policy.
+    If this needs recreating later (new repo, transferred ownership, etc.),
+    decode a real token the same way rather than assuming the classic format
+    is still accurate.
     IAM permissions: just `eks:DescribeCluster` on this one cluster (see
     `infra/github-actions-permissions-policy.json`) — actual Kubernetes
     access comes from an EKS Access Entry mapping that role to

@@ -12,7 +12,7 @@
           "token.actions.githubusercontent.com:aud": "sts.amazonaws.com"
         },
         "StringLike": {
-          "token.actions.githubusercontent.com:sub": "repo:likithpala7/agent-harness:ref:refs/heads/main"
+          "token.actions.githubusercontent.com:sub": "repo:likithpala7@58575772/agent-harness@1375277757:ref:refs/heads/main"
         }
       }
     }
