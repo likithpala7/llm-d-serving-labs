@@ -243,10 +243,20 @@ billing — only deleting the cluster does. Recreating from `cluster.yaml`
 next session costs the same 15–20 min either way, so there's no real
 downside to always tearing down.
 
-AWS Budgets set up as a backstop (alerts at 50/80/100% of a $50 budget);
-Budget Actions can auto-stop EC2 instances at a threshold but can't touch
-the control plane or NAT gateway fees — don't rely on it as the primary
-control.
+**AWS Budget actually set up now (2026-10-01)** — this was previously just
+claimed here without ever being done (discovered via `aws budgets
+describe-budgets` coming back empty). `agent-harness-monthly`, $50/month,
+email alerts to likithpala7@gmail.com at 50/80/100% actual spend —
+config vendored in `infra/budget.json` /
+`infra/budget-notifications.json`, created via `aws budgets
+create-budget`. Note: `CalculatedSpend` showed `$0.0` immediately after
+creation despite real usage that session — AWS Budgets has the same
+billing-data lag Cost Explorer does, so don't read a low number right
+after creation as proof of low spend. **This is alerts only** — Budget
+Actions (the separate feature that can auto-stop EC2 instances at a
+threshold) is NOT configured, and still couldn't touch the control
+plane or NAT gateway fees even if it were — don't rely on this budget
+as the primary cost control, `eksctl delete cluster` still is.
 
 ## llm-d specifics
 

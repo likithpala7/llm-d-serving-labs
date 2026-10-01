@@ -1,0 +1,9 @@
+{
+  "BudgetName": "agent-harness-monthly",
+  "BudgetLimit": {
+    "Amount": "50",
+    "Unit": "USD"
+  },
+  "TimeUnit": "MONTHLY",
+  "BudgetType": "COST"
+}
