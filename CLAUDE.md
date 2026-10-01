@@ -327,3 +327,9 @@ architecture is still moving; a repo split is a cheap mechanical operation
     `associate-access-policy` (the actual RBAC grant — this last command
     needs explicit user confirmation/manual run, it's the step that grants
     real cluster access and gets flagged by permission classifiers).
+  - **Confirmed working (2026-10-01) up through the pre-flight check**:
+    OIDC auth → IAM role assumption → `aws eks update-kubeconfig` → kubectl
+    connectivity all succeeded; the pre-flight step correctly failed with
+    its intended clear message since the GPU node was down at the time
+    (post-break scale-down). The `kubectl apply`/`helm upgrade`/rollout
+    steps are unverified until run once with the GPU actually up.
