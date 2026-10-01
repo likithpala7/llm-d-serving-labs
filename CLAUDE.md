@@ -171,6 +171,36 @@ baseline works.
   GPU is up, trigger the `.github/workflows/deploy.yml` CD workflow instead
   for config-only changes — it still needs its first real end-to-end run
   with the GPU actually up, see the CI/CD section below).
+- **`gpu-baseline` diversified across 3 instance types (2026-10-01).**
+  After `g5.2xlarge` alone hit `InsufficientInstanceCapacity` across
+  every AZ for 90+ minutes straight on a fresh recreate, switched
+  `cluster.yaml`'s `gpu-baseline` from a single `instanceType` to
+  `instanceTypes: ["g5.2xlarge", "g6.2xlarge", "g6e.2xlarge"]` — EKS
+  managed node groups support multiple `instanceTypes` for `ON_DEMAND`
+  capacity, not just `SPOT` (confirmed via the AWS `CreateNodegroup` API
+  reference; most docs/examples only show it for Spot, but nothing
+  restricts it). All three are 8 vCPU/single-GPU, so **no new quota
+  needed** — same `L-DB2E81BA` limit covers the whole G-family. Three
+  independent hardware pools (A10G/L4/L40S) instead of one, for more
+  chances of finding capacity. Deliberately excluded `g4dn.2xlarge`
+  (T4, 16GB VRAM — too tight for Qwen3-8B's ~15.27GB bf16 weights alone).
+  Note: `amiFamily: AmazonLinux2023` + mixed NVIDIA types resolves to one
+  shared `AL2023_x86_64_NVIDIA` AMI type automatically; eksctl also
+  auto-excludes any AZ that doesn't support one of the listed types
+  (e.g. dropped `us-east-1f` here, since it doesn't support `g6e.2xlarge`)
+  rather than failing outright. **Changing `instanceTypes` on an existing
+  node group requires delete+recreate of just that node group** (not the
+  whole cluster, and not an in-place update) —
+  `eksctl delete nodegroup --cluster=llm-d-harness --name=gpu-baseline`
+  then `eksctl create nodegroup -f infra/cluster.yaml`. One wrinkle hit
+  along the way: immediately re-running `create nodegroup` right after a
+  delete can spuriously report the node group as "already existing" (an
+  eksctl-side eventual-consistency check, not a real conflict) — it
+  resolved on a simple retry a few seconds later. First successful launch
+  after this change landed on `g5.2xlarge` again, so this particular
+  instance may have just been capacity clearing up over time rather than
+  proof the diversification was the deciding factor — but the config is
+  more resilient either way for next time.
 
 ## Local environment
 
