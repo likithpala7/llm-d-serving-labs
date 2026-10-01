@@ -53,7 +53,7 @@ spec:
             # cache, but the A10G only has ~3.98GiB free after loading the
             # 15.27GiB bf16 model weights (vLLM estimated ~28976 tokens as
             # the real ceiling) — capped well under that with headroom
-            - "--max-model-len=8192"
+            - "--max-model-len=10000"
           env:
             - name: HF_TOKEN
               valueFrom:
