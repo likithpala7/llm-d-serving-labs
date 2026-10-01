@@ -30,7 +30,15 @@ managedNodeGroups:
       role: system
 
   - name: gpu-baseline
-    instanceType: g5.2xlarge   # 1x A10G, 24GB VRAM
+    # Multiple instance types instead of pinning one — g5.2xlarge
+    # (A10G) alone has been hitting InsufficientInstanceCapacity across
+    # every AZ for 90+ minutes straight (2026-10-01). All three are 8
+    # vCPU / single-GPU / ~22-45GB VRAM, fit the existing 8-vCPU G/VT
+    # quota unchanged, and draw from independent hardware pools (A10G,
+    # L4, L40S) so the ASG has more chances of finding capacity anywhere.
+    # g4dn.2xlarge (T4, 16GB VRAM) deliberately excluded: too tight for
+    # Qwen3-8B's ~15.27GB bf16 weights alone.
+    instanceTypes: ["g5.2xlarge", "g6.2xlarge", "g6e.2xlarge"]
     amiFamily: AmazonLinux2023  # eksctl resolves the GPU-enabled AL2023 variant automatically
     desiredCapacity: 0         # 0 until GPU quota clears — group exists, no instances launched yet
     minSize: 0
