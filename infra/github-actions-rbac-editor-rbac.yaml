@@ -1,0 +1,34 @@
+# Lets the GitHub Actions CD role manage Role/RoleBinding objects within
+# this one namespace - the router Helm chart owns a Role
+# (optimized-baseline-epp-sa) that helm upgrade needs to read/update, but
+# AmazonEKSEditPolicy deliberately excludes rbac.authorization.k8s.io
+# resources (Kubernetes' built-in "edit" ClusterRole does this on purpose,
+# to stop "edit" granting itself more permissions via RBAC objects).
+# Scoped to namespace-level Role/RoleBinding only - still can't touch
+# ClusterRole/ClusterRoleBinding or any other namespace. The CD role
+# already has full edit on everything else in this namespace, so this
+# doesn't meaningfully expand its reach - just closes the one RBAC-object
+# gap "edit" leaves on purpose.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: github-actions-rbac-editor
+  namespace: llm-d-optimized-baseline
+rules:
+  - apiGroups: ["rbac.authorization.k8s.io"]
+    resources: ["roles", "rolebindings"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: github-actions-rbac-editor
+  namespace: llm-d-optimized-baseline
+subjects:
+  - kind: Group
+    name: github-actions-rbac-editor
+    apiGroup: rbac.authorization.k8s.io
+roleRef:
+  kind: Role
+  name: github-actions-rbac-editor
+  apiGroup: rbac.authorization.k8s.io
