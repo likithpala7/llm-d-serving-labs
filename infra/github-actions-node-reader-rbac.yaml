@@ -1,0 +1,26 @@
+# Grants the GitHub Actions CD role read-only access to Node objects
+# (cluster-scoped, so it can never come from the namespace-scoped
+# AmazonEKSEditPolicy access policy) - needed for deploy.yml's pre-flight
+# check (kubectl get nodes -l role=gpu) to actually work rather than
+# silently fail auth and report a false "no GPU" negative.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: github-actions-node-reader
+rules:
+  - apiGroups: [""]
+    resources: ["nodes"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: github-actions-node-reader
+subjects:
+  - kind: Group
+    name: github-actions-node-readers
+    apiGroup: rbac.authorization.k8s.io
+roleRef:
+  kind: ClusterRole
+  name: github-actions-node-reader
+  apiGroup: rbac.authorization.k8s.io

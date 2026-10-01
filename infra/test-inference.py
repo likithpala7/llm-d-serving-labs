@@ -7,8 +7,8 @@ import urllib.request
 URL = "http://localhost:8080/v1/completions"
 payload = {
     "model": "Qwen/Qwen3-8B",
-    "prompt": "The capital of France is",
-    "max_tokens": 20,
+    "prompt": "How are you doing today?",
+    "max_tokens": 9000,
 }
 
 req = urllib.request.Request(
