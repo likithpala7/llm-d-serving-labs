@@ -378,3 +378,34 @@ architecture is still moving; a repo split is a cheap mechanical operation
     its intended clear message since the GPU node was down at the time
     (post-break scale-down). The `kubectl apply`/`helm upgrade`/rollout
     steps are unverified until run once with the GPU actually up.
+  - **Found and fixed (2026-10-01): the EKS Access Entry does NOT survive
+    a cluster delete+recreate**, even though the IAM OIDC provider and
+    role (account-level, cluster-independent) do. After recreating
+    `llm-d-harness` from scratch, the CD workflow's pre-flight check
+    failed claiming no GPU node, even with a real `Ready` GPU node up —
+    `aws eks describe-access-entry` for the role came back
+    `ResourceNotFoundException`: the access entry (and its policy
+    association) had to be recreated from scratch on the new cluster
+    (same two commands as the original setup above). **Whenever the
+    cluster is deleted and recreated, redo the access entry +
+    policy association too** — it's not just an IAM-side concern.
+  - **Also found and fixed: a real, separate RBAC gap in the pre-flight
+    check itself.** `kubectl get nodes` targets a **cluster-scoped**
+    resource; a namespace-scoped `RoleBinding` (what `AmazonEKSEditPolicy`
+    + `accessScope: namespace` produces) can never grant access to a
+    cluster-scoped resource like `Node`, no matter what the underlying
+    policy's rules list — this is a fundamental Kubernetes RBAC rule, not
+    a misconfiguration to retry past. Fixed by adding a Kubernetes group
+    (`github-actions-node-readers`) to the role's access entry via
+    `aws eks update-access-entry --kubernetes-groups`, then a small
+    read-only `ClusterRole`/`ClusterRoleBinding` (`get`/`list`/`watch` on
+    `nodes` only) bound to that group — vendored in
+    `infra/github-actions-node-reader-rbac.yaml`, applied directly via
+    `kubectl apply -f` (also gets flagged by permission classifiers,
+    same as the access-policy association — expect to run it yourself).
+    **This ClusterRoleBinding is a cluster-internal Kubernetes object,
+    not an AWS/IAM resource** — it does NOT get wiped by a cluster
+    delete+recreate... except it does, trivially, because the entire
+    cluster (and everything inside it, including this RBAC object) is
+    what got deleted. Re-apply `infra/github-actions-node-reader-rbac.yaml`
+    any time the cluster itself is recreated, alongside the access entry.
