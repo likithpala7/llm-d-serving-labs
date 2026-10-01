@@ -156,6 +156,21 @@ baseline works.
   tight — see saga above), then `bash infra/deploy-baseline.sh` (needs
   `HF_TOKEN` set — run this one yourself, not through an AI assistant,
   since it's a secret).
+- **Cluster torn down (2026-10-01), confirmed fully clean.** Ended the
+  session by fully deleting `llm-d-harness` (both node groups + control
+  plane + VPC + NAT gateway) rather than just scaling the GPU to 0 —
+  verified nothing billable remains (`aws eks describe-cluster` → not
+  found, no CloudFormation stacks, no VPC, no NAT gateway, no ASGs, no
+  running instances). Hit the by-now-familiar `eksctl` silent-stall
+  pattern once again right after the node groups cleared (background
+  process stopped polling without erroring or completing) — fixed the
+  same way as before: reissue `eksctl delete cluster -f infra/cluster.yaml`
+  directly rather than waiting on the stalled process. **To resume next
+  session**: `eksctl create cluster -f infra/cluster.yaml`, then scale
+  `gpu-baseline` to 1, then `bash infra/deploy-baseline.sh` (or, once the
+  GPU is up, trigger the `.github/workflows/deploy.yml` CD workflow instead
+  for config-only changes — it still needs its first real end-to-end run
+  with the GPU actually up, see the CI/CD section below).
 
 ## Local environment
 
