@@ -1,14 +1,23 @@
-# Lets the GitHub Actions CD role manage Role/RoleBinding objects within
-# this one namespace - the router Helm chart owns a Role
-# (optimized-baseline-epp-sa) that helm upgrade needs to read/update, but
-# AmazonEKSEditPolicy deliberately excludes rbac.authorization.k8s.io
-# resources (Kubernetes' built-in "edit" ClusterRole does this on purpose,
-# to stop "edit" granting itself more permissions via RBAC objects).
-# Scoped to namespace-level Role/RoleBinding only - still can't touch
-# ClusterRole/ClusterRoleBinding or any other namespace. The CD role
-# already has full edit on everything else in this namespace, so this
-# doesn't meaningfully expand its reach - just closes the one RBAC-object
-# gap "edit" leaves on purpose.
+# Lets the GitHub Actions CD role manage two things AmazonEKSEditPolicy
+# doesn't cover, both scoped to this one namespace only:
+#
+# 1. rbac.authorization.k8s.io (Role/RoleBinding) - the router Helm chart
+#    owns a Role (optimized-baseline-epp-sa) that helm upgrade needs to
+#    read/update, but Kubernetes' built-in "edit" ClusterRole deliberately
+#    excludes RBAC objects (to stop "edit" granting itself more
+#    permissions via them) - AmazonEKSEditPolicy inherits that exclusion.
+#
+# 2. inference.networking.k8s.io (the GAIE CRD's API group, e.g.
+#    InferencePool) - AmazonEKSEditPolicy is a static AWS-managed policy
+#    that predates this CRD entirely; it has no way to know about custom
+#    resource types unless the CRD opts into Kubernetes' RBAC-aggregation
+#    labels, which GAIE's doesn't. Granted the whole API group (not just
+#    inferencepools) since more resource types could hit the same gap as
+#    the chart evolves - still namespace-scoped, so no broader exposure.
+#
+# The CD role already has full edit on everything else in this
+# namespace, so neither of these meaningfully expands its reach - they
+# just close gaps "edit" leaves on purpose or doesn't know about.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
@@ -17,6 +26,9 @@ metadata:
 rules:
   - apiGroups: ["rbac.authorization.k8s.io"]
     resources: ["roles", "rolebindings"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["inference.networking.k8s.io"]
+    resources: ["*"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
