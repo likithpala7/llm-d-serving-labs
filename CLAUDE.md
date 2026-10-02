@@ -201,6 +201,41 @@ baseline works.
   instance may have just been capacity clearing up over time rather than
   proof the diversification was the deciding factor — but the config is
   more resilient either way for next time.
+- **End of session (2026-10-01): full teardown confirmed, nothing
+  billable running.** `eksctl delete cluster -f infra/cluster.yaml` —
+  hit the by-now-routine silent-stall pattern once more right after the
+  node groups cleared, fixed the same way as every other time
+  (reissue the delete command). Verified clean: no cluster, no
+  CloudFormation stacks, no VPC, no NAT gateway, no ASGs, no running
+  instances. Session summary since the last status note above:
+  - CD workflow (`deploy.yml`) fully validated end-to-end for real —
+    not just the pre-flight check anymore. Found and fixed 3 more
+    issues getting there: (1) the EKS Access Entry doesn't survive a
+    cluster delete+recreate even though the IAM role/OIDC provider do;
+    (2) `AmazonEKSEditPolicy` excludes `rbac.authorization.k8s.io`
+    objects on purpose (privilege-escalation guard) but the router
+    chart owns a `Role` that `helm upgrade` needs to read; (3) it also
+    has no way to know about the GAIE CRD's `inference.networking.k8s.io`
+    API group. All three fixed with narrowly-scoped, namespace-level
+    grants — see the CI/CD section below for specifics.
+  - `peakPrefillThroughput` recalibrated for real hardware (3682, L4) —
+    see the llm-d specifics section below.
+  - AWS Budget actually created (it was claimed but never real before).
+  - `gpu-baseline` diversified across 3 GPU instance types after a
+    sustained 90+ min capacity shortage on `g5.2xlarge` alone.
+  - Confirmed empirically (deliberately tried scaling to 2 GPUs): the
+    8-vCPU quota has zero headroom for a second concurrent GPU —
+    fails immediately with `VcpuLimitExceeded`, not a capacity error.
+    Submitted the follow-up 16-vCPU request for phase 2 (see llm-d
+    specifics section) — check its status before spending time on
+    phase 2's actual 2-GPU setup.
+  **To resume**: `eksctl create cluster -f infra/cluster.yaml`, scale
+  `gpu-baseline` to 1, then either `bash infra/deploy-baseline.sh` or
+  (once that's done once) trigger `.github/workflows/deploy.yml` for
+  any config-only changes. Remember to redo the EKS Access Entry +
+  both RBAC grants if the cluster was fully recreated (see CI/CD
+  section) — those don't survive a cluster delete, only the IAM-side
+  pieces do.
 
 ## Local environment
 
