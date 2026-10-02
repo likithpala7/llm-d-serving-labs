@@ -322,6 +322,21 @@ as the primary cost control, `eksctl delete cluster` still is.
   `kubectl rollout restart deployment/<guide>-epp` right after every
   `helm upgrade`, so this is no longer something to remember to do by
   hand.
+- **Phase 2 prep: second quota increase requested (2026-10-02).** The
+  G/VT quota (`L-DB2E81BA`) is a single account-wide ceiling on total
+  vCPUs across all *simultaneously*-running G-family instances, not a
+  per-node-group limit. Every GPU type we use is 8 vCPUs, and
+  `gpu-baseline` already runs right at the current 8-vCPU ceiling with
+  one GPU up — zero headroom. PD disaggregation needs prefill and decode
+  on two GPUs *concurrently* (16 vCPUs), so this was always going to be
+  needed — it's literally the other half of the original 16-vCPU ask
+  from the very first (denied) request, which got split into 8+8 after
+  that denial. Submitted a new request for 16 total: request ID
+  `930342003d63424f8801cf1f991c7eed3Z0GJJjt`, status `PENDING`. Check:
+  `aws service-quotas list-requested-service-quota-change-history-by-quota --service-code ec2 --quota-code L-DB2E81BA --region us-east-1`.
+  No other phase-2 work is blocked on this landing — can still read the
+  `pd-disaggregation` guide and update `cluster.yaml`/manifests while it's
+  in flight; only actually scaling to 2 concurrent GPUs needs it approved.
 - Phase 2 guide: `guides/pd-disaggregation/` — KV transfer via NIXL
   (llm-d's default) or LMCache
 - Gated models (e.g. Llama) need an `HF_TOKEN` secret — check that
