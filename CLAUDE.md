@@ -295,14 +295,33 @@ as the primary cost control, `eksctl delete cluster` still is.
   1Gi limit each) and layered on as the last `-f` in `deploy-baseline.sh`'s
   `helm install`/`upgrade` — same "vendor the override, don't edit the
   llm-d clone" pattern as the vLLM manifests above.
-- **Follow-up once benchmarking (phase 2+)**: the router's
-  `peakPrefillThroughput: 15928` default (in
-  `guides/optimized-baseline/router/optimized-baseline.values.yaml`) is
-  calibrated for the guide's reference setup (Qwen3-32B on H100, TP=2) —
-  not this Qwen3-8B/A10G setup. Not a blocker with a single replica, but
-  needs recalibrating via the guide's `recipes/router/calibration`
-  recipe before the saturation-aware routing behavior can be trusted for
-  real benchmarking.
+- **`peakPrefillThroughput` recalibrated (2026-10-02).** The guide's
+  default (`15928`, for Qwen3-32B on H100 TP=2) didn't match this setup.
+  Measured via `guides/recipes/router/calibration/calibrate.sh`:
+  `NAMESPACE=llm-d-optimized-baseline MODEL_NAME=Qwen/Qwen3-8B
+  CHUNK_SIZE=2048` (not the recipe's `CHUNK_SIZE=8192` default — that has
+  to match vLLM's actual resolved `max_num_batched_tokens`, which for our
+  `--max-model-len=10000` config is `2048`, confirmed via `EngineArgs(...)
+  .create_engine_config().scheduler_config.max_num_batched_tokens` run
+  inside the pod rather than assumed — vLLM computes this dynamically,
+  it's not a fixed default, and the full startup log line it's normally
+  printed in gets log-rotated out within minutes). **Result: 3682
+  tokens/sec, measured on a `g6.2xlarge` (L4).** Applied via a third
+  override file, `infra/router-calibration-override.values.yaml`
+  (the plugins config is one YAML-as-string value in Helm's eyes, not a
+  mergeable map, so the override has to carry the whole
+  `optimized-baseline-plugins.yaml` content, not just the one line) —
+  now layered into both `deploy-baseline.sh` and `deploy.yml`.
+  **This value is hardware-specific and `gpu-baseline` now diversifies
+  across 3 GPU types (A10G/L4/L40S)** — if a future recreate lands on a
+  different one, re-run `calibrate.sh` and update this file; 3682 is
+  only valid for the L4. Also discovered while fixing this: the EPP
+  **does not hot-reload** its plugins ConfigMap — a plain `helm upgrade`
+  updates the ConfigMap's content but the running pod keeps its
+  in-memory config until restarted. `deploy.yml` now does
+  `kubectl rollout restart deployment/<guide>-epp` right after every
+  `helm upgrade`, so this is no longer something to remember to do by
+  hand.
 - Phase 2 guide: `guides/pd-disaggregation/` — KV transfer via NIXL
   (llm-d's default) or LMCache
 - Gated models (e.g. Llama) need an `HF_TOKEN` secret — check that

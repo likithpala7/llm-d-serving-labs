@@ -57,7 +57,13 @@ jobs:
             -f /tmp/llm-d/guides/recipes/router/base.values.yaml \
             -f /tmp/llm-d/guides/${GUIDE_NAME}/router/${GUIDE_NAME}.values.yaml \
             -f infra/router-resources-override.values.yaml \
+            -f infra/router-calibration-override.values.yaml \
             -n "${NAMESPACE}" --version "${ROUTER_CHART_VERSION}"
+
+      - name: Restart EPP (doesn't hot-reload its plugins ConfigMap)
+        run: |
+          kubectl rollout restart -n "${NAMESPACE}" deployment/${GUIDE_NAME}-epp
+          kubectl rollout status -n "${NAMESPACE}" deployment/${GUIDE_NAME}-epp --timeout=5m
 
       - name: Wait for the decode pod to roll out
         run: |

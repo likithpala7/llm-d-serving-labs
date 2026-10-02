@@ -1,0 +1,36 @@
+# pluginsCustomConfig's value is a single YAML-as-string block, not a
+# mergeable map - Helm values merging replaces strings wholesale rather
+# than merging into them, so this has to be a full copy of the guide's
+# optimized-baseline-plugins.yaml (from optimized-baseline.values.yaml),
+# not just the one added field.
+#
+# peakPrefillThroughput measured 2026-10-02 via
+# guides/recipes/router/calibration/calibrate.sh against Qwen/Qwen3-8B
+# on a g6.2xlarge (NVIDIA L4) - CHUNK_SIZE=2048 (the actual resolved
+# max_num_batched_tokens for our config, confirmed via
+# EngineArgs.create_engine_config(), not the recipe's 8192 default).
+# Result: 3682 tokens/sec.
+#
+# This value is hardware-specific. gpu-baseline now diversifies across
+# g5.2xlarge (A10G) / g6.2xlarge (L4) / g6e.2xlarge (L40S) - if a future
+# recreate lands on a different GPU type, re-run calibrate.sh and update
+# this file; the stored 3682 is only valid for the L4.
+router:
+  epp:
+    pluginsConfigFile: "optimized-baseline-plugins.yaml"
+    pluginsCustomConfig:
+      optimized-baseline-plugins.yaml: |
+        apiVersion: llm-d.ai/v1alpha1
+        kind: EndpointPickerConfig
+        plugins:
+        - type: approx-prefix-cache-producer
+        - type: inflight-load-producer
+        - type: prefix-cache-affinity-filter
+          parameters:
+            peakPrefillThroughput: 3682
+        - type: token-load-scorer
+        schedulingProfiles:
+        - name: default
+          plugins:
+          - pluginRef: prefix-cache-affinity-filter
+          - pluginRef: token-load-scorer
