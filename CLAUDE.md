@@ -532,14 +532,69 @@ as the primary cost control, `eksctl delete cluster` still is.
        input sequence lengths (e.g. 10k ISL | 1k OSL, **not** 200 ISL |
        200 OSL)" — our test is squarely the case they say *not* to expect
        a win in.
-    **Follow-up for a fairer test** (not yet done): equal GPU budget
-    (2-replica baseline vs. 2-GPU PD) + sustained high concurrency +
-    longer prompts/outputs — the regime where PD's architecture is
-    actually supposed to pay off, per the guide's own benchmarking
-    methodology (`llmdbenchmark`, rate=45 sustained for 120s,
-    5000-token input / 250-token output). Still not done: extending the
-    CD workflow (`deploy.yml`) to cover the pd-disaggregation guide
-    (currently scoped to `optimized-baseline` only).
+    **Fairer equal-compute/sustained-load test run 2026-10-14 — a more
+    substantive finding than the first one.** Built
+    `infra/benchmark-compare.sh`, a single end-to-end script: scales
+    `gpu-baseline` to 2, deploys baseline, scales it to 2 replicas
+    (equal GPU budget to PD), manages the port-forward lifecycle itself,
+    runs a 90s sustained load (concurrency 30, ~3000-token prompts
+    [`--prompt-tokens`, an approximate heuristic — see the script],
+    200-token completions — scaled down from the guide's own
+    production-scale reference (rate=45 for 120s, 5000/250, 120B model
+    on H200s) to something sane for an 8B model on A10G/L4/L40S), tears
+    down, repeats for PD, prints a comparison. Extended
+    `benchmark-ttft.py` with `--duration` (sustained mode — workers fire
+    back-to-back until a deadline, not a fixed small count) and
+    `--prompt-tokens`; added `compare-results.py` for the side-by-side
+    table. Hit one real bug on the first run: `deploy-baseline.sh` used
+    plain `helm install`, which fails outright if a release by that name
+    already exists (it did, left over from the earlier light-load test
+    session) — fixed by switching both `deploy-baseline.sh` and
+    `deploy-pd.sh` to `helm upgrade --install`, which is idempotent
+    either way. Fixed, the full run completed cleanly (0 errors both
+    sides):
+
+    | Metric | Baseline (2 GPU, 2 replicas) | PD (2 GPU, 1P+1D) |
+    |---|---|---|
+    | Requests/sec | 2.35 | 1.81 |
+    | TTFT avg | 0.583s | 4.111s |
+    | TTFT p50 | 0.385s | 0.787s |
+    | TTFT p90 | 1.864s | **21.352s** |
+    | E2E latency avg | 12.73s | 16.09s |
+    | Tokens/sec | 470.65 | 361.32 |
+
+    **The real finding isn't "PD is slower" — it's a queue blowing up.**
+    PD's p90 TTFT is >11x worse than baseline's, and the p50-vs-p90 gap
+    (0.787s → 21.352s) is the signature of an unbounded backlog, not a
+    uniform slowdown. Root cause: this topology has exactly **one**
+    prefill GPU, and we'd already measured its real throughput ceiling —
+    **1392 tokens/sec** (the calibration above). At concurrency 30 with
+    ~3000-token prompts, aggregate prefill demand is roughly
+    `30 × 3000 = 90,000` tokens just to clear one wave of concurrent
+    requests — over a minute against that ceiling — and under
+    *sustained* load, new requests keep arriving faster than the single
+    prefill GPU can drain the queue, so it grows without bound for the
+    whole 90s window. Baseline has no equivalent chokepoint: both of its
+    GPUs independently do prefill *and* decode for their own share of
+    traffic, so the router just load-balances across two equally-capable
+    workers — nothing routes 100% of demand through a single resource.
+    **This directly confirms something the guide documents and we'd
+    only read in passing before: "xPyD Ratios — tuning the ratio of P to
+    D workers to match your ISL:OSL ratio."** The guide's own reference
+    topology is 8 prefill : 2 decode — heavily prefill-weighted —
+    specifically because large-ISL workloads need proportionally more
+    prefill capacity. Our fixed 1:1 ratio, forced by the 2-GPU quota
+    ceiling, is a real mismatch for 3000-token prompts at concurrency 30:
+    equalizing *GPU count* didn't equalize *capability*, because PD's
+    architecture needs enough prefill replicas to match prefill demand,
+    and 2 total GPUs isn't enough budget to provision a correct P:D
+    ratio for this ISL — within that budget, baseline's "every GPU does
+    everything" approach is simply the better fit. **Not yet done**:
+    confirming this diagnosis by lowering concurrency/prompt size until
+    PD's p90 stops blowing up (would show the P:D-ratio explanation is
+    right, not something else), and extending the CD workflow
+    (`deploy.yml`) to cover the pd-disaggregation guide (currently
+    scoped to `optimized-baseline` only).
 - Phase 2 guide: `guides/pd-disaggregation/` — KV transfer via NIXL
   (llm-d's default) or LMCache
 - Gated models (e.g. Llama) need an `HF_TOKEN` secret — check that

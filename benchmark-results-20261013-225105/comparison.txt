@@ -1,0 +1,10 @@
+Metric                          baseline-2gpu      pd-disaggregation
+--------------------------------------------------------------------
+Requests/sec                             2.35                   1.81
+TTFT avg (s)                            0.583                  4.111
+TTFT p50 (s)                            0.385                  0.787
+TTFT p90 (s)                            1.864                 21.352
+E2E latency avg (s)                    12.728                 16.085
+E2E latency p90 (s)                    13.865                 33.360
+Tokens/sec                             470.65                 361.32
+Errors                                      0                      0

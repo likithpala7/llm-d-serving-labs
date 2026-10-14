@@ -1,0 +1,16 @@
+[pd-disaggregation] Sustained load for 90s at concurrency 30...
+
+=== pd-disaggregation ===
+Total time:        99.64s
+Requests:          180 (180 ok, 0 failed)
+Requests/sec:      1.81
+TTFT avg:          4.111s
+TTFT p50:          0.787s
+TTFT p90:          21.352s
+TTFT p99:          21.528s
+E2E latency avg:   16.085s
+E2E latency p50:   12.771s
+E2E latency p90:   33.360s
+E2E latency p99:   33.553s
+Tokens generated:  36000
+Tokens/sec:        361.32

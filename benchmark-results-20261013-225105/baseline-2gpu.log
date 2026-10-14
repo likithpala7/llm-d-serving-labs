@@ -1,0 +1,16 @@
+[baseline-2gpu] Sustained load for 90s at concurrency 30...
+
+=== baseline-2gpu ===
+Total time:        101.99s
+Requests:          240 (240 ok, 0 failed)
+Requests/sec:      2.35
+TTFT avg:          0.583s
+TTFT p50:          0.385s
+TTFT p90:          1.864s
+TTFT p99:          2.000s
+E2E latency avg:   12.728s
+E2E latency p50:   12.544s
+E2E latency p90:   13.865s
+E2E latency p99:   13.995s
+Tokens generated:  48000
+Tokens/sec:        470.65
