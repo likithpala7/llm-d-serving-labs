@@ -372,6 +372,31 @@ as the primary cost control, `eksctl delete cluster` still is.
   No other phase-2 work is blocked on this landing — can still read the
   `pd-disaggregation` guide and update `cluster.yaml`/manifests while it's
   in flight; only actually scaling to 2 concurrent GPUs needs it approved.
+  **DENIED 2026-10-13 — and this time it's a hard, structural denial, not
+  a "retry with more justification" one.** AWS Billing support (case
+  `179089988700169`) said the internal service team can't approve this
+  one at all: *"quota increases for [G-family] instances are facilitated
+  by AWS sales and need[] to be submitted through them"* — i.e. this
+  specific quota, past some threshold, is gated to the Sales/account-
+  manager channel rather than self-service Service Quotas, full stop.
+  Pushed back once (noting the 8-vCPU request alone took ~10 days
+  including a denial+appeal, and this one had already been open a
+  week) — got a polite but firm "out of my hands, this is Sales-gated
+  policy" response pointing to AWS Sales contact channels (live chat /
+  phone / contact-us form) to get an account manager assigned.
+  **Workaround found: switch to the `.xlarge` (not `.2xlarge`) variants
+  of the same GPU types.** `g5.xlarge` / `g6.xlarge` / `g6e.xlarge` are
+  **4 vCPUs each** (confirmed via `aws ec2 describe-instance-types`) —
+  same GPU model and VRAM as their `.2xlarge` counterparts (A10G/L4
+  22.9GB, L40S 45.8GB), just half the vCPU/system-RAM allocation. Two of
+  these running concurrently = 8 vCPUs total, fully covered by the
+  **already-approved** quota — no Sales conversation needed at all.
+  **Not yet implemented** — this requires retuning `infra/modelserver`'s
+  resource requests down to fit 4 vCPU/16GiB per node instead of the
+  current 6-7 vCPU/24-28GiB (sized for `.2xlarge`'s 8 vCPU/32GiB) before
+  it'll actually schedule. GPU VRAM itself is unaffected (same as
+  before), so this shouldn't change model/`max-model-len` sizing, only
+  the container's `resources.requests/limits` for cpu/memory.
 - Phase 2 guide: `guides/pd-disaggregation/` — KV transfer via NIXL
   (llm-d's default) or LMCache
 - Gated models (e.g. Llama) need an `HF_TOKEN` secret — check that
