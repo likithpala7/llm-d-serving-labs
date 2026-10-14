@@ -595,6 +595,25 @@ as the primary cost control, `eksctl delete cluster` still is.
     right, not something else), and extending the CD workflow
     (`deploy.yml`) to cover the pd-disaggregation guide (currently
     scoped to `optimized-baseline` only).
+- **End of session (2026-10-13): full teardown confirmed, nothing
+  billable running.** `eksctl delete cluster -f infra/cluster.yaml` —
+  hit the usual silent-stall pattern twice (once on a node group stuck
+  `DELETING` with 0 real instances, fixed the standard way — force-
+  delete its ASG; once on the control plane step itself, fixed by
+  reissuing the delete command) — neither is new, same playbook as
+  every prior teardown. Verified clean: no cluster, no CloudFormation
+  stacks, no VPC, no NAT gateway, no ASGs, no running instances.
+  App layer (both namespaces) was already torn down by
+  `benchmark-compare.sh` itself before this — it doesn't delete the
+  cluster, only its own app-layer deployments, so the explicit cluster
+  delete was still a separate, necessary step.
+  **To resume next session**: `eksctl create cluster -f
+  infra/cluster.yaml`, scale `gpu-baseline` to however many GPUs the
+  next task needs (1 for phase 1 baseline alone, 2 for PD or the
+  equal-compute comparison), then the relevant `deploy-*.sh`. The
+  phase-2 open items above (confirm the P:D-ratio diagnosis at lower
+  load, CD coverage for pd-disaggregation) are the natural next things
+  to pick up.
 - Phase 2 guide: `guides/pd-disaggregation/` — KV transfer via NIXL
   (llm-d's default) or LMCache
 - Gated models (e.g. Llama) need an `HF_TOKEN` secret — check that
