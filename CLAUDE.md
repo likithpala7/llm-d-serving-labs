@@ -485,13 +485,61 @@ as the primary cost control, `eksctl delete cluster` still is.
     generated tokens from a KV cache **transferred in from the prefill
     pod**, not computed locally. This is real proof the core phase-2
     mechanism works end-to-end on this hardware.
-    **Still not done**: the real calibration run (currently running on
-    the phase-1-derived placeholder `peakPrefillThroughput: 3682`,
-    not yet measured through this actual P/D path), extending the CD
-    workflow (`deploy.yml`) to cover this guide (currently scoped to
-    `optimized-baseline` only), and the actual TTFT/throughput benchmark
-    comparison against the phase 1 baseline that's the whole point of
-    this phase.
+    **Calibration done 2026-10-14**: real `peakPrefillThroughput`
+    measured at **1392** tokens/sec (via `calibrate.sh`, `CHUNK_SIZE=2048`
+    — confirmed `--block-size=128` doesn't change vLLM's resolved
+    `max_num_batched_tokens` from phase 1's same value). Notably lower
+    than the 3682 placeholder carried over from phase 1's aggregated
+    calibration — expected, since this number includes the real NIXL
+    transfer + sidecar hop overhead that aggregated serving never pays.
+    Applied and confirmed live in the EPP's ConfigMap.
+  - **TTFT/throughput benchmark done 2026-10-14 — honest result: the
+    1-GPU aggregated baseline won on every metric.** Built
+    `infra/benchmark-ttft.py` (streaming completions, measures TTFT
+    separately from E2E latency — `load-test.py` from phase 1 uses
+    blocking requests and can't see TTFT at all, since TTFT only exists
+    once you time the first streamed chunk separately from the last).
+    Ran both setups sequentially (only 2 GPUs total — PD's prefill+decode
+    already use both, so the baseline had to be benchmarked after tearing
+    PD's app layer down, not concurrently):
+
+    | Metric (concurrency 10 → 20) | Baseline (1 GPU) | PD (2 GPUs) |
+    |---|---|---|
+    | Requests/sec | 4.73 → 8.99 | 3.64 → 6.16 |
+    | TTFT avg | 0.258s → 0.288s | 0.806s → 1.120s |
+    | E2E latency avg | 2.10s → 2.20s | 2.64s → 3.01s |
+    | Tokens/sec | 236 → 450 | 182 → 308 |
+
+    **Not a bug — this matches a tradeoff the `llm-d` guide's own
+    benchmark report documents** (their report shows PD's TTFT mean
+    *also* came in worse than aggregated: 1157ms vs 532ms, +117%, with
+    their own note: *"vLLM allocates all GPU resources to processing
+    prefills [in aggregated]... TTFT is elevated in the disaggregated
+    setup because less resources are allocated to processing prefills"*).
+    Two reasons our result favors baseline so cleanly:
+    1. **Not an equal-compute comparison** — PD uses 2 GPUs against
+       baseline's 1; this measures the two architectures at different
+       total compute, not the disaggregation effect in isolation. A fair
+       comparison needs baseline scaled to 2 replicas (bump `replicas: 1`
+       → `2` in `infra/modelserver/decode-deployment.yaml`) first.
+    2. **Wrong workload regime for PD's actual benefit.** PD disaggregation
+       helps by eliminating *prefill interference with decode* on a
+       shared GPU — only relevant when that contention is real. Our test
+       (short prompts, 50 output tokens, light-moderate concurrency) barely
+       contends a single decode GPU, so there's nothing for PD to relieve,
+       while it still pays a flat tax every request (sidecar hop, NIXL
+       transfer). The guide's own docs explicitly scope P/D to "longer
+       input sequence lengths (e.g. 10k ISL | 1k OSL, **not** 200 ISL |
+       200 OSL)" — our test is squarely the case they say *not* to expect
+       a win in.
+    **Follow-up for a fairer test** (not yet done): equal GPU budget
+    (2-replica baseline vs. 2-GPU PD) + sustained high concurrency +
+    longer prompts/outputs — the regime where PD's architecture is
+    actually supposed to pay off, per the guide's own benchmarking
+    methodology (`llmdbenchmark`, rate=45 sustained for 120s,
+    5000-token input / 250-token output). Still not done: extending the
+    CD workflow (`deploy.yml`) to cover the pd-disaggregation guide
+    (currently scoped to `optimized-baseline` only).
 - Phase 2 guide: `guides/pd-disaggregation/` — KV transfer via NIXL
   (llm-d's default) or LMCache
 - Gated models (e.g. Llama) need an `HF_TOKEN` secret — check that
