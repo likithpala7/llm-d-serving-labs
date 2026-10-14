@@ -25,16 +25,19 @@
 # - maxPrefixTokensToMatch: 8192 (was 131072, sized for the guide's 5k-ISL
 #   workload) — must stay under our --max-model-len=10000; 8192 leaves
 #   headroom for the completion.
-# - peakPrefillThroughput: 3682 (was 33821, measured on the guide's
-#   8x-prefill-TP=1-on-H200 reference fleet) — carried over from phase 1's
-#   calibration (infra/router-calibration-override.values.yaml, same
-#   hardware/model, Qwen3-8B on an L4). This is a placeholder, not a real
-#   measurement for the P/D path: the guide's own comment notes its value
-#   should be measured "through the full P/D path" (NIXL transfer + sidecar
-#   hop included), which phase 1's aggregated-serving calibration run
-#   never exercised. Re-run guides/recipes/router/calibration/calibrate.sh
-#   against this stack once it's up and update this value before trusting
-#   any P/D benchmark numbers.
+# - peakPrefillThroughput: 1392 — measured for real 2026-10-14 via
+#   guides/recipes/router/calibration/calibrate.sh against this live
+#   namespace (NAMESPACE=llm-d-pd-disaggregation MODEL_NAME=Qwen/Qwen3-8B
+#   CHUNK_SIZE=2048 — confirmed via EngineArgs introspection in the
+#   prefill pod that --block-size=128 doesn't change the resolved
+#   max_num_batched_tokens from phase 1's same 2048). Notably lower than
+#   phase 1's aggregated-serving placeholder (3682, was carried over
+#   here before this run) — expected, since this measurement goes
+#   through the real NIXL transfer + sidecar hop that aggregated serving
+#   never exercises, exactly the caveat the guide's own comment flagged.
+#   Re-measure if the hardware changes (gpu-baseline diversifies across
+#   A10G/L4/L40S — this number is only valid for whichever GPU type
+#   prefill/decode actually landed on when measured).
 router:
   epp:
     # Single EPP replica: per the guide, the inflight-load-producer's
@@ -60,7 +63,7 @@ router:
         - type: inflight-load-producer
         - type: prefix-cache-affinity-filter
           parameters:
-            peakPrefillThroughput: 3682
+            peakPrefillThroughput: 1392
         - type: token-load-scorer
         - type: active-request-scorer
         - type: max-score-picker
