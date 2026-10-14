@@ -1,0 +1,61 @@
+# pluginsCustomConfig's value is a single YAML-as-string block, not a
+# mergeable map (same gotcha as infra/router-calibration-override.values.yaml
+# for phase 1) — this carries the full pd-disaggregation.values.yaml
+# plugins config from the llm-d guide, with two numbers retuned for our
+# hardware/model instead of the guide's gpt-oss-120b/multi-node-H200
+# reference setup:
+#
+# - maxPrefixTokensToMatch: 8192 (was 131072, sized for the guide's 5k-ISL
+#   workload) — must stay under our --max-model-len=10000; 8192 leaves
+#   headroom for the completion.
+# - peakPrefillThroughput: 3682 (was 33821, measured on the guide's
+#   8x-prefill-TP=1-on-H200 reference fleet) — carried over from phase 1's
+#   calibration (infra/router-calibration-override.values.yaml, same
+#   hardware/model, Qwen3-8B on an L4). This is a placeholder, not a real
+#   measurement for the P/D path: the guide's own comment notes its value
+#   should be measured "through the full P/D path" (NIXL transfer + sidecar
+#   hop included), which phase 1's aggregated-serving calibration run
+#   never exercised. Re-run guides/recipes/router/calibration/calibrate.sh
+#   against this stack once it's up and update this value before trusting
+#   any P/D benchmark numbers.
+router:
+  epp:
+    # Single EPP replica: per the guide, the inflight-load-producer's
+    # in-flight token accounting is local to each EPP process, so multiple
+    # replicas would each see only a fraction of the per-endpoint load.
+    replicas: 1
+    pluginsConfigFile: "pd-config.yaml"
+    pluginsCustomConfig:
+      pd-config.yaml: |
+        apiVersion: llm-d.ai/v1alpha1
+        kind: EndpointPickerConfig
+        plugins:
+        - type: disagg-headers-handler
+        - type: always-disagg-pd-decider
+        - type: disagg-profile-handler
+          parameters:
+            deciderPluginName: always-disagg-pd-decider
+        - type: prefill-filter
+        - type: decode-filter
+        - type: approx-prefix-cache-producer
+          parameters:
+            maxPrefixTokensToMatch: 8192
+        - type: inflight-load-producer
+        - type: prefix-cache-affinity-filter
+          parameters:
+            peakPrefillThroughput: 3682
+        - type: token-load-scorer
+        - type: active-request-scorer
+        - type: max-score-picker
+        schedulingProfiles:
+        - name: prefill
+          plugins:
+          - pluginRef: prefill-filter
+          - pluginRef: prefix-cache-affinity-filter
+          - pluginRef: token-load-scorer
+          - pluginRef: max-score-picker
+        - name: decode
+          plugins:
+          - pluginRef: decode-filter
+          - pluginRef: active-request-scorer
+          - pluginRef: max-score-picker

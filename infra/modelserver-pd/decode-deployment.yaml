@@ -1,0 +1,164 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pd-disaggregation-nvidia-gpu-vllm-decode
+  labels:
+    llm-d.ai/accelerator-variant: gpu
+    llm-d.ai/accelerator-vendor: nvidia
+    llm-d.ai/guide: pd-disaggregation
+    llm-d.ai/model: Qwen3-8B
+    llm-d.ai/role: decode
+spec:
+  # 1 instead of the guide's default of 2 (each TP=4, 4 GPUs/pod) — this
+  # cluster has exactly 2 GPUs total (gpu-baseline maxSize: 2), 1 for
+  # prefill (above) and 1 for decode, both TP=1.
+  replicas: 1
+  # Recreate — same single-GPU deadlock concern as the prefill deployment
+  # above; see its comment for the full rationale.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      llm-d.ai/accelerator-variant: gpu
+      llm-d.ai/accelerator-vendor: nvidia
+      llm-d.ai/guide: pd-disaggregation
+      llm-d.ai/model: Qwen3-8B
+      llm-d.ai/role: decode
+  template:
+    metadata:
+      labels:
+        llm-d.ai/accelerator-variant: gpu
+        llm-d.ai/accelerator-vendor: nvidia
+        llm-d.ai/guide: pd-disaggregation
+        llm-d.ai/model: Qwen3-8B
+        llm-d.ai/role: decode
+    spec:
+      serviceAccountName: pd-disaggregation-nvidia-gpu-vllm-sa
+      # cluster.yaml taints gpu-baseline with nvidia.com/gpu=true:NoSchedule
+      tolerations:
+        - key: nvidia.com/gpu
+          operator: Equal
+          value: "true"
+          effect: NoSchedule
+      # Native sidecar (restartPolicy: Always on an initContainer, k8s
+      # 1.28+): the llm-d routing-proxy listens on 8000 and is the pod's
+      # actual entry point. It speaks the disaggregated-serving protocol
+      # with the prefill pod over NIXL, then forwards into the local vLLM
+      # decode engine on 8200 (below). "main" is a floating tag — this is
+      # what upstream itself ships for this image; no pinned release tag
+      # exists for it yet.
+      initContainers:
+        - name: routing-proxy
+          image: ghcr.io/llm-d/llm-d-router-disagg-sidecar:main
+          imagePullPolicy: Always
+          args:
+            - --port=8000
+            - --kv-connector=nixlv2
+            - --zap-log-level=1
+            - --secure-proxy=false
+          ports:
+            - name: sidecar
+              containerPort: 8000
+              protocol: TCP
+          resources: {}
+          restartPolicy: Always
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+      containers:
+        - name: modelserver
+          image: vllm/vllm-openai:v0.26.0
+          command: ["vllm", "serve"]
+          args:
+            # Qwen3-8B instead of the guide's default gpt-oss-120b — see
+            # prefill-deployment.yaml for why
+            - "Qwen/Qwen3-8B"
+            - "--disable-access-log-for-endpoints=/health,/metrics,/v1/models"
+            - "--tensor-parallel-size=1"
+            - "--block-size=128"
+            - "--kv-transfer-config"
+            - '{"kv_connector":"NixlConnector", "kv_role":"kv_both"}'
+            - "--no-disable-hybrid-kv-cache-manager"
+            - "--max-model-len=10000"
+            # vLLM listens on 8200, not the default 8000 — the sidecar
+            # above owns 8000 as the pod's actual entry point
+            - "--port=8200"
+          env:
+            - name: HF_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: llm-d-hf-token
+                  key: HF_TOKEN
+            - name: VLLM_NIXL_SIDE_CHANNEL_HOST
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            # Workaround for https://github.com/vllm-project/vllm/issues/44548 —
+            # see prefill-deployment.yaml for the same note
+            - name: USER
+              value: llm-d
+          ports:
+            # Named "modelserver" at 8200 (not 8000) — the probes below
+            # target this port by name, so they follow the number change
+            - name: modelserver
+              containerPort: 8200
+              protocol: TCP
+            - name: nixl
+              containerPort: 5600
+              protocol: TCP
+          resources:
+            # sized for .xlarge GPU instances (4 vCPU / 16GiB / 1x GPU) —
+            # see cluster.yaml's gpu-baseline comment for why .xlarge,
+            # not .2xlarge
+            limits:
+              cpu: '3.5'
+              memory: 14Gi
+              nvidia.com/gpu: 1
+            requests:
+              cpu: '3'
+              memory: 12Gi
+              nvidia.com/gpu: 1
+          volumeMounts:
+            - mountPath: /dev/shm
+              name: shm
+            - mountPath: /.cache
+              name: torch-compile-cache
+            - mountPath: /.triton
+              name: triton-cache
+            - mountPath: /.config
+              name: vllm-config
+          startupProbe:
+            httpGet:
+              path: /v1/models
+              port: modelserver
+            initialDelaySeconds: 15
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 120
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: modelserver
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /v1/models
+              port: modelserver
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 3
+      volumes:
+        # guide uses 20Gi — larger than this node's entire 16GiB; same
+        # 4Gi used in phase 1's decode deployment for the same model size
+        - name: shm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 4Gi
+        - name: torch-compile-cache
+          emptyDir: {}
+        - name: triton-cache
+          emptyDir: {}
+        - name: vllm-config
+          emptyDir: {}

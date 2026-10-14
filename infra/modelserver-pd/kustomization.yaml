@@ -1,0 +1,15 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Phase 2 prefill/decode disaggregation, 2 single-GPU instances. Derived
+# from llm-d's guides/pd-disaggregation/modelserver/gpu/vllm/base
+# (INFRA_PROVIDER=base, NixlConnector), trimmed from the guide's
+# 8x-prefill + 2x-decode(TP=4) gpt-oss-120b topology down to the project's
+# actual phase-2 goal: 1 prefill + 1 decode, each TP=1, each on one GPU —
+# see CLAUDE.md's llm-d specifics section. Vendored as flattened plain
+# manifests here (not kustomize bases/components referencing the llm-d
+# clone), same pattern as infra/modelserver/ for phase 1.
+resources:
+  - serviceaccount.yaml
+  - prefill-deployment.yaml
+  - decode-deployment.yaml

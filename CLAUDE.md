@@ -404,6 +404,63 @@ as the primary cost control, `eksctl delete cluster` still is.
   PD disaggregation itself (separate prefill/decode deployments, KV
   transfer). That's the next real step, via the `guides/pd-
   disaggregation/` guide below.
+- **PD disaggregation manifests implemented (2026-10-13) — written and
+  validated (`kubectl kustomize` + `yamllint`), NOT yet run against a
+  live cluster** (none existed at the time; cluster was down per the
+  end-of-session teardown). Derived from `guides/pd-disaggregation/`
+  (`modelserver/gpu/vllm/base`, NixlConnector, the `base` overlay — not
+  `cks-mooncake`, which needs RDMA infra this cluster doesn't have).
+  Scoped way down from the guide's reference topology (8 prefill + 2
+  decode-TP=4, for `gpt-oss-120b` across a multi-node H200 fleet) to
+  match this project's actual phase-2 goal and hardware: **1 prefill +
+  1 decode, each TP=1, each on one `.xlarge` GPU** (`Qwen/Qwen3-8B`,
+  same model as phase 1 — the guide's reference model needs far more
+  VRAM than one GPU has).
+  - New files: `infra/modelserver-pd/` (serviceaccount + flattened
+    prefill/decode Deployments + kustomization — same "vendor it,
+    don't edit the llm-d clone" pattern as `infra/modelserver/`),
+    `infra/router-pd-plugins-override.values.yaml` (the P/D-specific
+    EPP plugin config — `disagg-headers-handler`, `prefill-filter`/
+    `decode-filter`, separate `prefill`/`decode` scheduling profiles —
+    this guide's `pluginsCustomConfig` is a totally different plugin
+    set from phase 1's, not just different parameters), `infra/deploy-
+    pd.sh` / `infra/teardown-pd.sh` (mirrors `deploy-baseline.sh`/
+    `teardown-baseline.sh`, different namespace `llm-d-pd-disaggregation`
+    and release name `pd-disaggregation`). `infra/router-resources-
+    override.values.yaml` is reused as-is (guide-agnostic, just
+    cpu/memory numbers for the `system` node).
+  - Decode runs the llm-d routing-proxy as a **native sidecar**
+    (`initContainers` entry with `restartPolicy: Always`, k8s 1.28+
+    feature) on port 8000 — the pod's actual entry point, handling the
+    NIXL handshake with the prefill pod — which forwards into the real
+    vLLM engine on port 8200 inside the same pod. Image tag `main` is a
+    floating tag; that's what upstream itself ships, no pinned release
+    exists for it yet.
+  - `strategy: Recreate` on both Deployments, same single-GPU
+    rolling-update deadlock reasoning as phase 1's decode deployment —
+    with only 2 GPU nodes total (shared between prefill and decode),
+    there's no spare capacity for a transient 3rd pod during a rollout.
+  - `shm` sizeLimit dropped to 4Gi (guide's 20Gi doesn't fit a 16GiB
+    `.xlarge` node at all); cpu/memory resources sized the same as
+    phase 1's post-`.xlarge`-retune decode deployment (3-3.5 vCPU /
+    12-14Gi, leaving headroom for daemonsets).
+  - `peakPrefillThroughput` in the plugins override is a **placeholder**
+    (3682, carried over from phase 1's aggregated-serving calibration on
+    the same hardware/model) — the guide's own comment says this value
+    should be measured "through the full P/D path" (NIXL transfer +
+    sidecar hop included), which phase 1's calibration run never
+    exercised. **Re-run `calibrate.sh` against this namespace once it's
+    live and update the override** before trusting any P/D benchmark
+    numbers. `maxPrefixTokensToMatch` retuned to 8192 (guide's 131072
+    assumes a far larger context budget than our `--max-model-len=10000`).
+  - **Not yet done**: running `deploy-pd.sh` against a live cluster
+    (needs `gpu-baseline` scaled to 2 — `cluster.yaml`'s `maxSize` already
+    allows this), verifying prefill/decode actually come up and complete
+    the NIXL handshake, the real calibration run above, extending the CD
+    workflow (`deploy.yml`) to cover this guide (currently scoped to
+    `optimized-baseline` only), and the actual TTFT/throughput benchmark
+    comparison against the phase 1 baseline that's the whole point of
+    this phase.
 - Phase 2 guide: `guides/pd-disaggregation/` — KV transfer via NIXL
   (llm-d's default) or LMCache
 - Gated models (e.g. Llama) need an `HF_TOKEN` secret — check that

@@ -1,0 +1,149 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pd-disaggregation-nvidia-gpu-vllm-prefill
+  labels:
+    llm-d.ai/accelerator-variant: gpu
+    llm-d.ai/accelerator-vendor: nvidia
+    llm-d.ai/guide: pd-disaggregation
+    llm-d.ai/model: Qwen3-8B
+    llm-d.ai/role: prefill
+spec:
+  # 1 instead of the guide's default of 8 (sized for gpt-oss-120b across
+  # a multi-node H200 fleet) — this cluster has exactly 2 GPUs total
+  # (gpu-baseline maxSize: 2), 1 for prefill and 1 for decode.
+  replicas: 1
+  # Recreate, not the default RollingUpdate — same single-GPU deadlock as
+  # phase 1's decode deployment (see infra/modelserver/decode-deployment.yaml):
+  # a rolling update's new pod can't schedule while the old one holds the
+  # only prefill-sized GPU slot, and the old one won't die until the new
+  # one's Ready. With only 2 GPU nodes total (shared with the decode
+  # deployment below), there's no spare capacity for a transient 3rd pod.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      llm-d.ai/accelerator-variant: gpu
+      llm-d.ai/accelerator-vendor: nvidia
+      llm-d.ai/guide: pd-disaggregation
+      llm-d.ai/model: Qwen3-8B
+      llm-d.ai/role: prefill
+  template:
+    metadata:
+      labels:
+        llm-d.ai/accelerator-variant: gpu
+        llm-d.ai/accelerator-vendor: nvidia
+        llm-d.ai/guide: pd-disaggregation
+        llm-d.ai/model: Qwen3-8B
+        llm-d.ai/role: prefill
+    spec:
+      serviceAccountName: pd-disaggregation-nvidia-gpu-vllm-sa
+      # cluster.yaml taints gpu-baseline with nvidia.com/gpu=true:NoSchedule
+      tolerations:
+        - key: nvidia.com/gpu
+          operator: Equal
+          value: "true"
+          effect: NoSchedule
+      containers:
+        - name: modelserver
+          image: vllm/vllm-openai:v0.26.0
+          command: ["vllm", "serve"]
+          args:
+            # Qwen3-8B instead of the guide's default gpt-oss-120b — the
+            # guide's reference model needs a multi-node H200 fleet;
+            # Qwen3-8B fits a single 22-24GB-VRAM GPU (A10G/L4), same
+            # model already validated in phase 1's aggregated baseline
+            - "Qwen/Qwen3-8B"
+            - "--disable-access-log-for-endpoints=/health,/metrics,/v1/models"
+            - "--tensor-parallel-size=1"
+            - "--block-size=128"
+            - "--kv-transfer-config"
+            - '{"kv_connector":"NixlConnector", "kv_role":"kv_both"}'
+            - "--no-disable-hybrid-kv-cache-manager"
+            # same VRAM-fit cap validated in phase 1 (see
+            # infra/modelserver/decode-deployment.yaml for the math)
+            - "--max-model-len=10000"
+          env:
+            - name: HF_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: llm-d-hf-token
+                  key: HF_TOKEN
+            - name: VLLM_NIXL_SIDE_CHANNEL_HOST
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            # Default vLLM keep-alive (5s) is shorter than the llm-d
+            # routing sidecar's default idle conn timeout (90s, Go
+            # http.Transport), causing TCP RSTs on reuse. Must be >=
+            # the sidecar's idle timeout; guide sets this on prefill only.
+            - name: VLLM_HTTP_TIMEOUT_KEEP_ALIVE
+              value: "120"
+            # Workaround for https://github.com/vllm-project/vllm/issues/44548,
+            # required with vLLM v0.20.0+ due to torch 2.11 (upstream applies
+            # this via a kustomize component we don't use; added directly here)
+            - name: USER
+              value: llm-d
+          ports:
+            - name: modelserver
+              containerPort: 8000
+              protocol: TCP
+            - name: nixl
+              containerPort: 5600
+              protocol: TCP
+          resources:
+            # sized for .xlarge GPU instances (4 vCPU / 16GiB / 1x GPU) —
+            # see cluster.yaml's gpu-baseline comment for why .xlarge,
+            # not .2xlarge
+            limits:
+              cpu: '3.5'
+              memory: 14Gi
+              nvidia.com/gpu: 1
+            requests:
+              cpu: '3'
+              memory: 12Gi
+              nvidia.com/gpu: 1
+          volumeMounts:
+            - mountPath: /dev/shm
+              name: shm
+            - mountPath: /.cache
+              name: torch-compile-cache
+            - mountPath: /.triton
+              name: triton-cache
+            - mountPath: /.config
+              name: vllm-config
+          startupProbe:
+            httpGet:
+              path: /v1/models
+              port: modelserver
+            initialDelaySeconds: 15
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 120
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: modelserver
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /v1/models
+              port: modelserver
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 3
+      volumes:
+        # guide uses 20Gi — larger than this node's entire 16GiB; same
+        # 4Gi used in phase 1's decode deployment for the same model size
+        - name: shm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 4Gi
+        - name: torch-compile-cache
+          emptyDir: {}
+        - name: triton-cache
+          emptyDir: {}
+        - name: vllm-config
+          emptyDir: {}
