@@ -391,12 +391,19 @@ as the primary cost control, `eksctl delete cluster` still is.
   22.9GB, L40S 45.8GB), just half the vCPU/system-RAM allocation. Two of
   these running concurrently = 8 vCPUs total, fully covered by the
   **already-approved** quota — no Sales conversation needed at all.
-  **Not yet implemented** — this requires retuning `infra/modelserver`'s
-  resource requests down to fit 4 vCPU/16GiB per node instead of the
-  current 6-7 vCPU/24-28GiB (sized for `.2xlarge`'s 8 vCPU/32GiB) before
-  it'll actually schedule. GPU VRAM itself is unaffected (same as
-  before), so this shouldn't change model/`max-model-len` sizing, only
-  the container's `resources.requests/limits` for cpu/memory.
+  **Implemented 2026-10-13.** `cluster.yaml`'s `gpu-baseline` switched
+  to `instanceTypes: ["g5.xlarge", "g6.xlarge", "g6e.xlarge"]` with
+  `maxSize: 2` (was `.2xlarge`/`maxSize: 1`). `infra/modelserver/decode-
+  deployment.yaml`'s resource requests retuned down to fit 4 vCPU/16GiB
+  per node (`limits: cpu: 3.5, memory: 14Gi`; `requests: cpu: 3, memory:
+  12Gi` — was 7/28 and 6/24 for the old 8 vCPU/32GiB `.2xlarge` nodes).
+  GPU VRAM itself is unaffected (same model/amount as before), so
+  `--max-model-len` and the model choice didn't need to change — this
+  was purely a cpu/memory retune. **Not yet done**: this only brings up
+  capacity for a second concurrent GPU node — it does not yet implement
+  PD disaggregation itself (separate prefill/decode deployments, KV
+  transfer). That's the next real step, via the `guides/pd-
+  disaggregation/` guide below.
 - Phase 2 guide: `guides/pd-disaggregation/` — KV transfer via NIXL
   (llm-d's default) or LMCache
 - Gated models (e.g. Llama) need an `HF_TOKEN` secret — check that

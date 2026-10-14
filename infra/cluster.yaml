@@ -30,19 +30,25 @@ managedNodeGroups:
       role: system
 
   - name: gpu-baseline
-    # Multiple instance types instead of pinning one — g5.2xlarge
-    # (A10G) alone has been hitting InsufficientInstanceCapacity across
-    # every AZ for 90+ minutes straight (2026-10-01). All three are 8
-    # vCPU / single-GPU / ~22-45GB VRAM, fit the existing 8-vCPU G/VT
-    # quota unchanged, and draw from independent hardware pools (A10G,
-    # L4, L40S) so the ASG has more chances of finding capacity anywhere.
-    # g4dn.2xlarge (T4, 16GB VRAM) deliberately excluded: too tight for
+    # .xlarge, not .2xlarge — 4 vCPUs each, not 8. This is deliberate:
+    # the G/VT quota (L-DB2E81BA) is an account-wide ceiling on total
+    # vCPUs across all concurrently-running G-family instances, and a
+    # request to raise it from 8 to 16 (for phase 2's 2 concurrent GPUs)
+    # was denied outright 2026-10-13 — AWS Billing support said this
+    # particular quota is gated to the Sales/account-manager channel,
+    # not self-service Service Quotas, full stop. .xlarge variants have
+    # the same GPU model and VRAM as their .2xlarge counterparts (just
+    # half the vCPU/system-RAM), so maxSize: 2 here (2 x 4 vCPU = 8)
+    # fits entirely within the quota we already have approved — no
+    # Sales conversation needed. infra/modelserver's resource requests
+    # were retuned to match (4 vCPU/16GiB per node, not 8/32).
+    # g4dn.xlarge (T4, 16GB VRAM) deliberately excluded: too tight for
     # Qwen3-8B's ~15.27GB bf16 weights alone.
-    instanceTypes: ["g5.2xlarge", "g6.2xlarge", "g6e.2xlarge"]
+    instanceTypes: ["g5.xlarge", "g6.xlarge", "g6e.xlarge"]
     amiFamily: AmazonLinux2023  # eksctl resolves the GPU-enabled AL2023 variant automatically
-    desiredCapacity: 0         # 0 until GPU quota clears — group exists, no instances launched yet
+    desiredCapacity: 0         # 0 by default — scale up explicitly when needed
     minSize: 0
-    maxSize: 1
+    maxSize: 2
     volumeSize: 100             # model weights + container images add up fast
     labels:
       role: gpu
