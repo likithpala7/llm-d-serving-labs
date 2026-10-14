@@ -1,9 +1,26 @@
 # pluginsCustomConfig's value is a single YAML-as-string block, not a
 # mergeable map (same gotcha as infra/router-calibration-override.values.yaml
-# for phase 1) — this carries the full pd-disaggregation.values.yaml
-# plugins config from the llm-d guide, with two numbers retuned for our
-# hardware/model instead of the guide's gpt-oss-120b/multi-node-H200
-# reference setup:
+# for phase 1) — this carries the pd-disaggregation.values.yaml plugins
+# config from the llm-d guide text, but the guide text itself was stale
+# against the router image we're actually running (ghcr.io/llm-d/charts/
+# llm-d-router-standalone:v0, a floating OCI tag — same class of drift as
+# the GitHub OIDC sub-claim format change hit earlier in this project).
+#
+# Found 2026-10-13 via a real CrashLoopBackOff: "plugin type
+# 'disagg-headers-handler' is not registered". That plugin (and
+# `deciderPluginName` as a disagg-profile-handler parameter) was removed
+# upstream in llm-d/llm-d-router#2815 ("remove deprecated disagg header
+# handlers", fixing llm-d/llm-d-router#936) — disagg-profile-handler now
+# takes a nested `deciders: {prefill: <name>}` map instead. Fixed by:
+# dropping the disagg-headers-handler plugin entirely, and changing
+# disagg-profile-handler's parameter to `deciders.prefill`
+# (always-disagg-pd-decider itself is untouched, still a valid plugin
+# type). Also bumped apiVersion off v1alpha1 (deprecated, per this same
+# image's own startup warning: "removed in a later release") to v1, the
+# replacement the warning names.
+#
+# Two numbers also retuned for our hardware/model instead of the guide's
+# gpt-oss-120b/multi-node-H200 reference setup:
 #
 # - maxPrefixTokensToMatch: 8192 (was 131072, sized for the guide's 5k-ISL
 #   workload) — must stay under our --max-model-len=10000; 8192 leaves
@@ -27,14 +44,14 @@ router:
     pluginsConfigFile: "pd-config.yaml"
     pluginsCustomConfig:
       pd-config.yaml: |
-        apiVersion: llm-d.ai/v1alpha1
+        apiVersion: llm-d.ai/v1
         kind: EndpointPickerConfig
         plugins:
-        - type: disagg-headers-handler
         - type: always-disagg-pd-decider
         - type: disagg-profile-handler
           parameters:
-            deciderPluginName: always-disagg-pd-decider
+            deciders:
+              prefill: always-disagg-pd-decider
         - type: prefill-filter
         - type: decode-filter
         - type: approx-prefix-cache-producer

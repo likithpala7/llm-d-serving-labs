@@ -453,10 +453,41 @@ as the primary cost control, `eksctl delete cluster` still is.
     live and update the override** before trusting any P/D benchmark
     numbers. `maxPrefixTokensToMatch` retuned to 8192 (guide's 131072
     assumes a far larger context budget than our `--max-model-len=10000`).
-  - **Not yet done**: running `deploy-pd.sh` against a live cluster
-    (needs `gpu-baseline` scaled to 2 — `cluster.yaml`'s `maxSize` already
-    allows this), verifying prefill/decode actually come up and complete
-    the NIXL handshake, the real calibration run above, extending the CD
+  - **DEPLOYED AND VERIFIED LIVE (2026-10-14).** `gpu-baseline` scaled
+    to 2 — landed on `g5.xlarge` (A10G) + `g6.xlarge` (L4), two different
+    hardware pools concurrently, confirming the diversification actually
+    works for this. Ran `deploy-pd.sh`: GAIE CRDs, namespace, secret,
+    router, and both model servers all applied cleanly. Hit one real bug
+    immediately — **the EPP crash-looped**: `plugin type
+    'disagg-headers-handler' is not registered`. Root cause: the router
+    image (`ghcr.io/llm-d/charts/llm-d-router-standalone:v0`, a floating
+    tag) had moved past what the guide's checked-out text assumes —
+    `disagg-headers-handler` was removed upstream
+    (`llm-d/llm-d-router#2815`, fixing `#936`) and `disagg-profile-handler`
+    now takes a nested `deciders: {prefill: <name>}` parameter instead of
+    the old `deciderPluginName`. Found by searching the error message
+    rather than guessing (first hypothesis — an `allow-experimental-plugins`
+    EPP flag — was wrong; verified via web search + the actual GitHub PR
+    before touching anything). Fixed in
+    `infra/router-pd-plugins-override.values.yaml`: dropped the plugin,
+    updated `disagg-profile-handler`'s parameter, bumped `apiVersion` off
+    the also-deprecated `v1alpha1` to `v1`. `helm upgrade` +
+    `kubectl rollout restart deployment/pd-disaggregation-epp` (same
+    "EPP doesn't hot-reload its ConfigMap" fact learned in phase 1) fixed
+    it — epp came up `2/2 Running` immediately after.
+    **Verified the actual disaggregation mechanism works, not just that
+    pods are up**: sent a real completions request through the router and
+    confirmed in the decode pod's own vLLM logs — `NIXL compatibility
+    check passed`, a negotiated `Transfer plan`, and
+    `KV Transfer metrics: Num successful transfers=1, Avg xfer time (ms)=88.2,
+    Avg MB per transfer=18.0, Throughput (MB/s)=204` plus
+    `External prefix cache hit rate: 100.0%` — i.e. decode genuinely
+    generated tokens from a KV cache **transferred in from the prefill
+    pod**, not computed locally. This is real proof the core phase-2
+    mechanism works end-to-end on this hardware.
+    **Still not done**: the real calibration run (currently running on
+    the phase-1-derived placeholder `peakPrefillThroughput: 3682`,
+    not yet measured through this actual P/D path), extending the CD
     workflow (`deploy.yml`) to cover this guide (currently scoped to
     `optimized-baseline` only), and the actual TTFT/throughput benchmark
     comparison against the phase 1 baseline that's the whole point of
