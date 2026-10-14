@@ -34,7 +34,10 @@ kubectl create secret generic llm-d-hf-token \
   --dry-run=client -o yaml | kubectl apply -f -
 
 echo "==> Installing llm-d router (standalone mode)"
-helm install "${GUIDE_NAME}" \
+# upgrade --install, not plain install — idempotent whether or not a
+# release by this name already exists (e.g. left over from a prior
+# session that didn't run teardown-baseline.sh)
+helm upgrade --install "${GUIDE_NAME}" \
   "${ROUTER_STANDALONE_CHART}" \
   -f "${LLM_D_REPO_ROOT}/guides/recipes/router/base.values.yaml" \
   -f "${LLM_D_REPO_ROOT}/guides/${GUIDE_NAME}/router/${GUIDE_NAME}.values.yaml" \
