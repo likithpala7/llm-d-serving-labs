@@ -1,4 +1,4 @@
-# Agent Harness — Self-Managed LLM Inference on EKS
+# llm-d Serving Labs — Self-Managed LLM Inference on EKS
 
 A from-scratch GPU inference platform on AWS EKS, running [llm-d](https://github.com/llm-d/llm-d) + vLLM, including a real implementation and empirical benchmark of **prefill/decode (P/D) disaggregation** — a serving architecture technique that splits prompt processing and token generation onto separate, specialized GPUs.
 

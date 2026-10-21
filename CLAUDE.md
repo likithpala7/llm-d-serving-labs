@@ -1,27 +1,49 @@
-# Agent Harness on llm-d / EKS — Project Context
+# llm-d Serving Labs on EKS — Project Context
+
+**Repo renamed 2026-10-21** from `agent-harness` to `llm-d-serving-labs`,
+rescoping it to what it actually is: hands-on LLM-serving infrastructure
+and benchmarking experiments on llm-d/vLLM, not a larger unbuilt
+"agent harness" product. The IAM OIDC trust policy
+(`infra/github-actions-trust-policy.json`) was updated and re-applied to
+match the new repo name at the same time — GitHub's OIDC `sub` claim
+embeds the live repo name alongside its immutable ID, so a rename
+without this step would have silently broken the CD workflow's auth.
 
 ## Goal
 
-Build an agent harness: an LLM inference backend (llm-d on EKS running vLLM,
-with prefill/decode disaggregation across ≥2 GPUs), a sandboxed environment
-for tool execution and context management, and a basic UI to use it.
+Stand up a real GPU LLM-serving stack (llm-d on EKS running vLLM) from
+scratch, understand how it actually works end to end, and empirically
+test specific serving-architecture techniques — starting with
+prefill/decode disaggregation — rather than just read about them.
 
 Build philosophy: prioritize understanding internals and building genuinely
 novel pieces over wiring together existing frameworks. This is partly a
 learning project and partly a portfolio piece.
 
+(This repo was originally scoped as the inference-backend piece of a
+larger "agent harness" — adding a sandboxed tool-execution environment
+and a chat UI on top. Those two pieces were never built here and aren't
+this repo's goal anymore; if pursued, they belong in a separate project
+that consumes this one's serving layer, not bolted onto it.)
+
 ## Phased plan
 
 1. **EKS + llm-d/vLLM baseline, single GPU** — working end-to-end as of
    2026-09-30 (see Current Status below); teardown/recreate is routine now
-2. PD disaggregation across 2 GPUs (benchmark TTFT/throughput vs. baseline) ← currently here
-3. Sandbox + context-manager service (tool execution, context window mgmt)
-4. Basic UI (chat + live tool-call/sandbox trace)
+2. **PD disaggregation across 2 GPUs** — implemented, verified working via
+   real NIXL KV-transfer metrics, and benchmarked against the phase 1
+   baseline (2026-10-14, see Current Status below). The honest result:
+   on this project's GPU quota budget, the simpler aggregated baseline
+   wins, and the benchmark data shows precisely why (a single-prefill-GPU
+   bottleneck — see the `peakPrefillThroughput`/benchmark entries below).
+   This phase is considered complete with that finding; re-testing at a
+   properly-provisioned prefill-heavy ratio would need a larger GPU quota
+   than this account has.
 
-Reference target for where phases 2–3 converge: llm-d's `guides/agentic-serving/`
-guide composes prefix-aware routing, KV-cache offloading, and PD disaggregation
-specifically for agentic/tool-using workloads — worth revisiting once the
-baseline works.
+Future direction, not current scope: llm-d's `guides/agentic-serving/`
+guide composes prefix-aware routing, KV-cache offloading, and PD
+disaggregation specifically for agentic/tool-using workloads — worth a
+look if this repo's serving work continues, but out of scope for now.
 
 ## Current status
 
@@ -621,21 +643,17 @@ as the primary cost control, `eksctl delete cluster` still is.
 
 ## Repo structure
 
-**Monorepo** (not separate infra/app repos) — chosen deliberately since the
-architecture is still moving; a repo split is a cheap mechanical operation
-(`git filter-repo`) to do later once the interface has stabilized.
+Single `/infra` directory — `cluster.yaml`, plus all customized llm-d
+Helm/kustomize config, gateway/CRD setup, and the benchmarking tooling.
+Any manifest we deviate from upstream on (e.g. `infra/modelserver/`) is
+vendored here as a standalone copy, not edited in place in the separate
+`llm-d` clone — this repo should be everything needed to reproduce the
+deployed state, independent of whatever's on disk in other repos.
 
-- `/infra` — `cluster.yaml`, plus all customized llm-d Helm/kustomize
-  config, gateway/CRD setup. Any manifest we deviate from upstream on
-  (e.g. `infra/modelserver/`) is vendored here as a standalone copy, not
-  edited in place in the separate `llm-d` clone — this repo should be
-  everything needed to reproduce the deployed state, independent of
-  whatever's on disk in other repos.
-- `/app` — sandbox/context-manager service, UI, each owning its own
-  Dockerfile and K8s manifests for deploying itself onto the cluster
-- Orchestrator service should run in-cluster and reach the llm-d router via
-  in-cluster DNS (e.g. `http://<router-svc>.<namespace>.svc.cluster.local`)
-  rather than needing router endpoint info passed in from outside
+(No `/app` directory — the sandbox/context-manager/UI layer originally
+planned here was descoped along with the rest of the "agent harness"
+framing above; this repo is just the serving layer and its
+experiments.)
 
 ## CI/CD philosophy
 
